@@ -1,0 +1,242 @@
+[
+  {
+    "Target_1": ["two small green square"],
+    "Neutral_1": ["two small green circle", "one small green star"],
+    "Competitor_1": ["two small blue square", "one small blue triangle"],
+    "Alternative_1": ["two small green square", "one small green pentagon"]
+  },
+  {
+    "Target_2": ["two big green square"],
+    "Neutral_2": ["two big green circle", "one big green star"],
+    "Competitor_2": ["two big blue square", "one big blue triangle"],
+    "Alternative_2": ["two big green square", "one big green pentagon"]
+  },
+  {
+    "Target_3": ["two small green circle"],
+    "Neutral_3": ["two small green square", "one small green star"],
+    "Competitor_3": ["two small blue circle", "one small blue triangle"],
+    "Alternative_3": ["two small green circle", "one small green pentagon"]
+  },
+  {
+    "Target_4": ["two big green circle"],
+    "Neutral_4": ["two big green square", "one big green star"],
+    "Competitor_4": ["two big blue circle", "one big blue triangle"],
+    "Alternative_4": ["two big green circle", "one big green pentagon"]
+  },
+  {
+    "Target_5": ["two small green triangle"],
+    "Neutral_5": ["two small green square", "one small green star"],
+    "Competitor_5": ["two small blue triangle", "one small blue circle"],
+    "Alternative_5": ["two small green triangle", "one small green pentagon"]
+  },
+  {
+    "Target_6": ["two big green triangle"],
+    "Neutral_6": ["two big green square", "one big green star"],
+    "Competitor_6": ["two big blue triangle", "one big blue circle"],
+    "Alternative_6": ["two big green triangle", "one big green pentagon"]
+  },
+  {
+    "Target_7": ["two small green star"],
+    "Neutral_7": ["two small green square", "one small green triangle"],
+    "Competitor_7": ["two small blue star", "one small blue circle"],
+    "Alternative_7": ["two small green star", "one small blue pentagon"]
+  },
+  {
+    "Target_8": ["two big green star"],
+    "Neutral_8": ["two big green square", "one big green triangle"],
+    "Competitor_8": ["two big blue star", "one big blue circle"],
+    "Alternative_8": ["two big green star", "one big green pentagon"]
+  },
+  {
+    "Target_9": ["two small green pentagon"],
+    "Neutral_9": ["two small green square", "one small green triangle"],
+    "Competitor_9": ["two small blue pentagon", "one small blue star"],
+    "Alternative_9": ["two small green pentagon", "one small green circle"]
+  },
+  {
+    "Target_10": ["two big green pentagon"],
+    "Neutral_10": ["two big green square", "one big green triangle"],
+    "Competitor_10": ["two big blue pentagon", "one big blue circle"],
+    "Alternative_10": ["two big green pentagon", "one big green star"]
+  },
+  {
+    "Target_11": ["two small black square"],
+    "Neutral_11": ["two small black star", "one small black triangle"],
+    "Competitor_11": ["two small blue square", "one small blue circle"],
+    "Alternative_11": ["two small black square", "one small black pentagon"]
+  },
+  {
+    "Target_12": ["two big black square"],
+    "Neutral_12": ["two big black star", "one big black triangle"],
+    "Competitor_12": ["two big blue square", "one big blue circle"],
+    "Alternative_12": ["two big black square", "one big black pentagon"]
+  },
+  {
+    "Target_13": ["two small black circle"],
+    "Neutral_13": ["two small black star", "one small black triangle"],
+    "Competitor_13": ["two small blue circle", "one small blue square"],
+    "Alternative_13": ["two small black circle", "one small black pentagon"]
+  },
+  {
+    "Target_14": ["two big black circle"],
+    "Neutral_14": ["two big black star", "one big black triangle"],
+    "Competitor_14": ["two small black circle", "one small black square"],
+    "Alternative_14": ["two big black circle", "one big black pentagon"]
+  },
+  {
+    "Target_15": ["two small black triangle"],
+    "Neutral_15": ["two small black star", "one small black square"],
+    "Competitor_15": ["two big black triangle", "one big black circle"],
+    "Alternative_15": ["two small black triangle", "one small black pentagon"]
+  },
+  {
+    "Target_16": ["two big black triangle"],
+    "Neutral_16": ["two big black star", "one big black square"],
+    "Competitor_16": ["two small black triangle", "one small black circle"],
+    "Alternative_16": ["two big black triangle", "one big black pentagon"]
+  },
+  {
+    "Target_17": ["two small black star"],
+    "Neutral_17": ["two small black square", "one small black pentagon"],
+    "Competitor_17": ["two big black star", "one big black triangle"],
+    "Alternative_17": ["two small black star", "one small black circle"]
+  },
+  {
+    "Target_18": ["two big black star"],
+    "Neutral_18": ["two big black square", "one big black pentagon"],
+    "Competitor_18": ["two small black star", "one small black triangle"],
+    "Alternative_18": ["two big black star", "one big black circle"]
+  },
+  {
+    "Target_19": ["two small black pentagon"],
+    "Neutral_19": ["two small black square", "one small black star"],
+    "Competitor_19": ["two big black pentagon", "one big black triangle"],
+    "Alternative_19": ["two small black pentagon", "one small black circle"]
+  },
+  {
+    "Target_20": ["two big black pentagon"],
+    "Neutral_20": ["two big black square", "one big black star"],
+    "Competitor_20": ["two small black pentagon", "one small black triangle"],
+    "Alternative_20": ["two big black pentagon", "one big black circle"]
+  },
+  {
+    "Target_21": ["two small blue square"],
+    "Neutral_21": ["two small blue star", "one small blue triangle"],
+    "Competitor_21": ["two big blue square", "one big blue pentagon"],
+    "Alternative_21": ["two small blue square", "one small blue circle"]
+  },
+  {
+    "Target_22": ["two big blue square"],
+    "Neutral_22": ["two big blue star", "one big blue triangle"],
+    "Competitor_22": ["two small blue square", "one small blue pentagon"],
+    "Alternative_22": ["two big blue square", "one big blue star"]
+  },
+  {
+    "Target_23": ["two small blue circle"],
+    "Neutral_23": ["two small blue star", "one small blue triangle"],
+    "Competitor_23": ["two big blue circle", "one big blue pentagon"],
+    "Alternative_23": ["two small blue circle", "one small blue square"]
+  },
+  {
+    "Target_24": ["two big blue circle"],
+    "Neutral_24": ["two big blue star", "one big blue triangle"],
+    "Competitor_24": ["two small blue circle", "one small blue pentagon"],
+    "Alternative_24": ["two big blue circle", "one big blue square"]
+  },
+  {
+    "Target_25": ["two small blue triangle"],
+    "Neutral_25": ["two small blue star", "one small blue square"],
+    "Competitor_25": ["two big blue triangle", "one big blue circle"],
+    "Alternative_25": ["two small blue triangle", "one small blue pentagon"]
+  },
+  {
+    "Target_26": ["two big blue triangle"],
+    "Neutral_26": ["two big blue star", "one big blue square"],
+    "Competitor_26": ["two small blue triangle", "one small blue circle"],
+    "Alternative_26": ["two big blue triangle", "one big blue pentagon"]
+  },
+  {
+    "Target_27": ["two small blue star"],
+    "Neutral_27": ["two small blue square", "one small blue pentagon"],
+    "Competitor_27": ["two big black star", "one big black triangle"],
+    "Alternative_27": ["two small blue star", "one small blue circle"]
+  },
+  {
+    "Target_28": ["two big blue star"],
+    "Neutral_28": ["two big blue square", "one big blue pentagon"],
+    "Competitor_28": ["two small black star", "one small black triangle"],
+    "Alternative_28": ["two big blue star", "one big blue circle"]
+  },
+  {
+    "Target_29": ["two small blue pentagon"],
+    "Neutral_29": ["two small blue square", "one small blue star"],
+    "Competitor_29": ["two big black pentagon", "one big black circle"],
+    "Alternative_29": ["two small blue pentagon", "one small blue triangle"]
+  },
+  {
+    "Target_30": ["two big blue pentagon"],
+    "Neutral_30": ["two big blue square", "one big blue star"],
+    "Competitor_30": ["two small black pentagon", "one small black circle"],
+    "Alternative_30": ["two big blue pentagon", "one big blue triangle"]
+  },
+  {
+    "Target_31": ["two small pink square"],
+    "Neutral_31": ["two small pink triangle", "one small pink star"],
+    "Competitor_31": ["two big green square", "one big green pentagon"],
+    "Alternative_31": ["two small pink square", "one small pink circle"]
+  },
+  {
+    "Target_32": ["two big pink square"],
+    "Neutral_32": ["two big pink triangle", "one big pink star"],
+    "Competitor_32": ["two small green square", "one small green pentagon"],
+    "Alternative_32": ["two big pink square", "one big pink circle"]
+  },
+  {
+    "Target_33": ["two small pink circle"],
+    "Neutral_33": ["two small pink triangle", "one small pink star"],
+    "Competitor_33": ["two big green circle", "one big green pentagon"],
+    "Alternative_33": ["two small pink circle", "one small pink square"]
+  },
+  {
+    "Target_34": ["two big pink circle"],
+    "Neutral_34": ["two big pink triangle", "one big pink star"],
+    "Competitor_34": ["two small green circle", "one small green pentagon"],
+    "Alternative_34": ["two big pink circle", "one big pink square"]
+  },
+  {
+    "Target_35": ["two small pink triangle"],
+    "Neutral_35": ["two small pink star", "one small pink square"],
+    "Competitor_35": ["two big green triangle", "one big green pentagon"],
+    "Alternative_35": ["two small pink triangle", "one small pink circle"]
+  },
+  {
+    "Target_36": ["two big pink triangle"],
+    "Neutral_36": ["two big pink star", "one big pink square"],
+    "Competitor_36": ["two small green triangle", "one small green pentagon"],
+    "Alternative_36": ["two big pink triangle", "one big pink circle"]
+  },
+  {
+    "Target_37": ["two small pink star"],
+    "Neutral_37": ["two small pink square", "one small pink pentagon"],
+    "Competitor_37": ["two big green star", "one big green triangle"],
+    "Alternative_37": ["two small pink star", "one small pink circle"]
+  },
+  {
+    "Target_38": ["two big pink star"],
+    "Neutral_38": ["two big pink square", "one big pink pentagon"],
+    "Competitor_38": ["two small green star", "one small green triangle"],
+    "Alternative_38": ["two big pink star", "one big pink circle"]
+  },
+  {
+    "Target_39": ["two small pink pentagon"],
+    "Neutral_39": ["two small pink square", "one small pink star"],
+    "Competitor_39": ["two big green pentagon", "one big green triangle"],
+    "Alternative_39": ["two small pink pentagon", "one small pink circle"]
+  },
+  {
+    "Target_40": ["two big pink pentagon"],
+    "Neutral_40": ["two big pink square", "one big pink star"],
+    "Competitor_40": ["two small green pentagon", "one small green triangle"],
+    "Alternative_40": ["two big pink pentagon", "one big pink circle"]
+  }
+]
