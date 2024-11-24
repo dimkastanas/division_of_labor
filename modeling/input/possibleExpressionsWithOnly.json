@@ -1,5 +1,4 @@
-{
-    "expressions": [
+[
         "black",
         "black circle",
         "black pentagon",
@@ -358,5 +357,4 @@
         "two square only",
         "two star only",
         "two triangle only"
-    ]
-}
+]
