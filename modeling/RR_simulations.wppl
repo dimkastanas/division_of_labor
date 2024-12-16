@@ -1,90 +1,317 @@
 // webppl RR_simulations.wppl --require ./refModule
 
-var contexts = json.read('input/all_world_states.json')
-var possibleObjects = Categorical({vs: map(function(v) {return v['target']}, contexts)})
-var possibleUtterances = Categorical({vs: json.read('input/possibleExpressionsWithOnly.json')});
+/*var contexts = json.read("input/all_world_states.json");*/
+var contexts = [
+  {
+    target: "two small green square",
+    neutral: ["two small green circle", "one small green star"],
+    competitor: ["two small blue square", "one small blue triangle"],
+    alternative: ["two small green square", "one small green pentagon"],
+  },
+];
+
+// subset of possible utterances
+var possibleUtterances = Categorical({
+  vs: [
+    // references to the target
+    "two small green square",
+    "small green square",
+    "green square",
+    "two small",
+    "small green",
+    "green",
+    "square",
+
+    // references to the competitor, alternative and neutral
+    "circle",
+    "two small green circle",
+    "blue square",
+    "two small blue square",
+    "pentagon",
+    "two small green pentagon",
+
+    // references using only
+    "small only",
+    "green only",
+    "square only",
+    "circle only",
+    "two small green square only",
+  ],
+});
+
+var possibleObjects = Categorical({
+  vs: map(function (v) {
+    return v["target"];
+  }, contexts),
+});
+
+/*var possibleUtterances = Categorical({
+  vs: json.read("input/possibleExpressionsWithOnly.json"),
+});*/
 
 // these are the possible mixture weights for perspective-taking
 // where 0 is purely egocentric and 1 is purely partner's perspective
 var possibleWeightings = Categorical({
-  vs: _.range(0, 1, 0.1)
+  vs: _.range(0, 1, 0.1),
 });
-
 
 // alpha: soft-max temperature
 // <feature>Cost: cost associated with producing this feature
 // perspectiveCost: cost associated with perspective-taking
 var params = {
   alpha: 3,
-  costWeight: .02,
-  perspectiveCost : 0
+  costWeight: 0.02,
+  perspectiveCost: 0,
 };
-
+/*
 // utterance is true if object has all of the mentioned features
-var meaning = function(utt, object) {
-  var descriptors = utt.split(' ');
-  var objProperties = object.split(' ')
-  var matches = _.every(map(function(descriptor) {
-    return _.includes(objProperties, descriptor);
-  }, descriptors));
+var meaning = function (utt, object) {
+  var descriptors = utt.split(" ");
+  var objProperties = object.split(" ");
+  var matches = _.every(
+    map(function (descriptor) {
+      return _.includes(objProperties, descriptor);
+    }, descriptors)
+  );
   return matches;
 };
+*/
 
-var getTrueUtterances = function(context) {
-  var trueUtts = filter(function(utt) {
-    return _.some(map(function(obj) {
-      return meaning(utt, obj);
-    }, context));
+// when the utterance is true
+var meaning = function (utt, object) {
+  var descriptors = utt.split(" ");
+  var objProperties = object.split(" ");
+
+  // we define property categories
+  var shapes = ["circle", "square", "triangle", "pentagon", "star"];
+  var colours = ["green", "pink", "black", "blue"];
+  var sizes = ["small", "big"];
+  var numbers = ["two", "one"];
+
+  // we handle "only" cases
+  if (_.includes(descriptors, "only")) {
+    var descriptors = _.without(descriptors, "only");
+
+    // we check if all descriptors in the utterance are in the object's properties;
+    // if yes, then we proceed with exhaustivity check
+    var matchesSubset = _.every(
+      _.map(descriptors, function (descriptor) {
+        return _.includes(objProperties, descriptor);
+      })
+    );
+
+    if (!matchesSubset) return false;
+
+    // we check for exhaustivity within the relevant category of the descriptor
+    // if the utterance contains a shape descriptor (e.g., circle), the object must have exactly one shape
+    // the same holds for colours, sizes and numbers
+    var exhaustivityCheck = _.every(descriptors, function (descriptor) {
+      if (_.includes(shapes, descriptor)) {
+        return _.intersection(objProperties, shapes).length === 1;
+      }
+      if (_.includes(colours, descriptor)) {
+        return _.intersection(objProperties, colours).length === 1;
+      }
+      if (_.includes(sizes, descriptor)) {
+        return _.intersection(objProperties, sizes).length === 1;
+      }
+      if (_.includes(numbers, descriptor)) {
+        return _.intersection(objProperties, numbers).length === 1;
+      }
+      return true; // properties not in a category ('and' etc.) are not subject to exhaustivity checks
+    });
+
+    return exhaustivityCheck;
+  }
+
+  // without "only", we check if all descriptors in the utterance exist in the object
+  return _.every(
+    _.map(descriptors, function (descriptor) {
+      return _.includes(objProperties, descriptor);
+    })
+  );
+};
+
+var getTrueUtterances = function (context) {
+  var trueUtts = filter(function (utt) {
+    return _.some(
+      map(function (obj) {
+        return meaning(utt, obj);
+      }, context)
+    );
   }, possibleUtterances.support());
-  return Categorical({vs: trueUtts});
+  return Categorical({ vs: trueUtts });
 };
 
 // cost of producing utterance is sum of costs of the component words
-var uttCost = function(utt) {
-  return params.costWeight * utt.split(' ').length
+var uttCost = function (utt) {
+  return params.costWeight * utt.split(" ").length;
 };
 
 // derives the speaker's perspective from the listener's visible context
-var getSpeakerView = function(listenerContext) {
-  var hiddenObj = find(function(x) {return last(x.split(' ')) == 'private';}, listenerContext);
+var getSpeakerView = function (listenerContext) {
+  var hiddenObj = find(function (x) {
+    return last(x.split(" ")) == "private";
+  }, listenerContext);
   return remove(hiddenObj, listenerContext);
 };
 
 // L0 interprets utterance literally using fixed mixture of perspectives
-var L0 = cache(function(utt, context, weighting) {
-  return Infer({method: 'enumerate'}, function() {
-    var perspective = flip(weighting) ? 'other' : 'own';
-    var partnerContext = perspective == 'own' ? context : getSpeakerView(context);
-      var object = uniformDraw(partnerContext);
-    factor(meaning(utt, object) ? Math.log(1) : Math.log(0.01));
+var L0 = cache(function (utt, context, weighting) {
+  return Infer({ method: "enumerate" }, function () {
+    var perspective = flip(weighting) ? "other" : "own";
+    var partnerContext =
+      perspective == "own" ? context : getSpeakerView(context);
+    var object = uniformDraw(partnerContext);
+    factor(meaning(utt, object, partnerContext) ? Math.log(1) : Math.log(0.01));
     return object;
   });
 });
 
+/*
+var L0 = cache(function (utt, context, weighting) {
+  return Infer({ method: "enumerate" }, function () {
+    console.log("L0 Debug -> Start");
+    console.log("utterance:", utt);
+    console.log("context:", context);
+    console.log("weighting:", weighting);
+
+    var perspective = flip(weighting) ? "other" : "own";
+    var partnerContext =
+      perspective == "own" ? context : getSpeakerView(context);
+
+    console.log("exploring path:", { utt, context, weighting, partnerContext }); 
+    console.log("partner context:", partnerContext);
+
+    var object = uniformDraw(partnerContext);
+    console.log("selected object:", object);
+
+    var isMeaningful = meaning(utt, object, partnerContext);
+    console.log("meaning check:", isMeaningful);
+
+    factor(isMeaningful ? Math.log(0.9) : Math.log(0.1));
+    console.log(
+      "Score (factor):",
+      isMeaningful ? Math.log(1.0) : Math.log(0.01)
+    );
+
+    return object;
+  });
+});
+*/
+
 // S1 selects utterance using fixed mixture of perspectives
 // (given belief about L0's mixture)
-var S1 = cache(function(target, context, ownWeighting) {
-  return Infer({method: 'enumerate'}, function() {
+
+var S1 = cache(function (target, context, ownWeighting) {
+  return Infer({ method: "enumerate" }, function () {
     var utt = sample(getTrueUtterances(context));
-    var egocentricUtility = L0(utt, context, 0).score(target) - uttCost(utt,params);
-    var combinedUtility = expectation(possibleWeightings, function(partnerWeighting) {
-      var asymmetricUtility = expectation(possibleObjects, function(obj) {
-        var possibleListenerView = context.concat(obj + ' private');
-        return L0(utt, possibleListenerView, partnerWeighting).score(target) - uttCost(utt,params);
-      });
-      return ownWeighting * asymmetricUtility + (1 - ownWeighting) * egocentricUtility;
-    });
+    var egocentricUtility =
+      L0(utt, context, 0).score(target) - uttCost(utt, params);
+    var combinedUtility = expectation(
+      possibleWeightings,
+      function (partnerWeighting) {
+        var asymmetricUtility = expectation(possibleObjects, function (obj) {
+          var possibleListenerView = context.concat(obj + " private");
+          return (
+            L0(utt, possibleListenerView, partnerWeighting).score(target) -
+            uttCost(utt, params)
+          );
+        });
+        return (
+          ownWeighting * asymmetricUtility +
+          (1 - ownWeighting) * egocentricUtility
+        );
+      }
+    );
     factor(params.alpha * combinedUtility);
     return utt;
   });
 });
 
+/*
+var S1 = cache(function (target, context, ownWeighting) {
+  console.log("S1 called with:");
+  console.log("Target:", target);
+  console.log("Context:", context);
+  console.log("OwnWeighting:", ownWeighting);
+  console.log("possibleWeightings support:", possibleWeightings.support());
+  console.log("possibleObjects support:", possibleObjects.support());
+
+  // debug the output of getTrueUtterances()
+  var trueUtts = getTrueUtterances(context);
+  console.log("True Utterances:", trueUtts.support()); 
+
+  return Infer({ method: "enumerate" }, function () {
+    var utt = sample(getTrueUtterances(context));
+    console.log("Utterance (utt):", utt);
+    console.log("Utterance Cost:", uttCost(utt, params));
+
+    var egocentricUtility =
+      L0(utt, context, 0).score(target) - uttCost(utt, params);
+    console.log("Egocentric Utility:", egocentricUtility);
+
+    var combinedUtility = expectation(
+      possibleWeightings,
+      function (partnerWeighting) {
+        var asymmetricUtility = expectation(possibleObjects, function (obj) {
+          var possibleListenerView = context.concat(obj + " private");
+          var score = L0(utt, possibleListenerView, partnerWeighting).score(
+            target
+          );
+          console.log("Object:", obj);
+          console.log("Possible Listener View:", possibleListenerView);
+          console.log("L0 Score for Object:", score);
+          return score - uttCost(utt, params);
+        });
+        console.log("Asymmetric Utility:", asymmetricUtility);
+
+        return (
+          ownWeighting * asymmetricUtility +
+          (1 - ownWeighting) * egocentricUtility
+        );
+      }
+    );
+    console.log("Combined Utility:", combinedUtility);
+    console.log("Alpha:", params.alpha, "CostWeight:", params.costWeight);
+
+    factor(params.alpha * combinedUtility);
+    return utt;
+  });
+});
+*/
+var target = contexts[0]["target"];
+var speakerContext = contexts[0]["neutral"]
+  .concat(contexts[0]["competitor"])
+  .concat(contexts[0]["alternative"]);
+
+/*
+// var speakerContext = contexts[0]["neutral"];
+var ownWeighting = 0.8;
+
+var speakerDistribution = S1(target, speakerContext, ownWeighting);
+
+//console.log("Speaker Distribution:", speakerDistribution);
+console.log(speakerDistribution.support());
+
+// log utterances with their probabilities instead of log-probabilities
+console.log(
+  speakerDistribution.support().map(function (utt) {
+    return {
+      utt: utt, 
+      prob: Math.exp(speakerDistribution.score(utt)), // convert log-probability to probability
+    };
+  })
+);
+*/
+
 // L1 selects objects given belief about S1's mixture
-var L1 = function(utt, context, ownWeighting) {
-  return Infer({method: 'enumerate'}, function() {
-    var perspective = flip(ownWeighting) ? 'other' : 'own';
-    var partnerContext = perspective == 'own' ? context : getSpeakerView(context);
-    var partnerWeight = perspective == 'own' ? 0 : sample(possibleWeightings);
+var L1 = function (utt, context, ownWeighting) {
+  return Infer({ method: "enumerate" }, function () {
+    var perspective = flip(ownWeighting) ? "other" : "own";
+    var partnerContext =
+      perspective == "own" ? context : getSpeakerView(context);
+    var partnerWeight = perspective == "own" ? 0 : sample(possibleWeightings);
 
     var object = uniformDraw(partnerContext);
     observe(S1(object, partnerContext, partnerWeight), utt);
@@ -94,58 +321,69 @@ var L1 = function(utt, context, ownWeighting) {
 
 // meta-cognitive resource-rational speaker selects optimal mixture
 // weight, marginalizing over uncertainty about listener's weight
-var RR_speaker = function(target, context) {
-  return Infer({method: 'enumerate'}, function() {
+var RR_speaker = function (target, context) {
+  return Infer({ method: "enumerate" }, function () {
     var ownWeighting = sample(possibleWeightings);
 
     // Imagine how speaker with this weight would behave
-    var likelyUtt = MAP(S1(target, context, ownWeighting))['val'];
-      console.log(likelyUtt)
+    var likelyUtt = MAP(S1(target, context, ownWeighting))["val"];
+    console.log(likelyUtt);
     // Imagine expected utility of that behavior, marginalizing over
     // partner's mixture weight and possible objects in partner's view
-    var utility = expectation(possibleObjects, function(obj) {
-      return expectation(possibleWeightings, function(partnerWeighting) {
-        var possibleListenerView = context.concat(obj + ' private');
-        return L0(likelyUtt, possibleListenerView, partnerWeighting).score(target);
+    var utility = expectation(possibleObjects, function (obj) {
+      return expectation(possibleWeightings, function (partnerWeighting) {
+        var possibleListenerView = context.concat(obj + " private");
+        return L0(likelyUtt, possibleListenerView, partnerWeighting).score(
+          target
+        );
       });
     });
-      console.log(utility)
+    console.log(utility);
     // putting more weight on partner's perspective is costly
     factor(utility - ownWeighting * params.perspectiveCost);
-    return {weighting: ownWeighting, perspectiveCost: params.perspectiveCost,
-            alpha: params.alpha, uttCost: argv.uttCost};
+    return {
+      weighting: ownWeighting,
+      perspectiveCost: params.perspectiveCost,
+      alpha: params.alpha,
+      //uttCost: argv.uttCost,
+    };
   });
-}
+};
 
 // meta-cognitive resource-rational speaker selects optimal mixture
 // weight, marginalizing over uncertainty about listener's weight
-var RR_listener = function(utt, baseContext) {
-  return Infer({method: 'enumerate'}, function() {
+var RR_listener = function (utt, baseContext) {
+  return Infer({ method: "enumerate" }, function () {
     var ownWeighting = sample(possibleWeightings);
 
     // Marginalize over partner's mixture weight and possible hidden objects
-    var utility = expectation(possibleObjects, function(hiddenObj) {
-      return expectation(possibleWeightings, function(partnerWeighting) {
-        var context = baseContext.concat(hiddenObj + ' private');
-          var realSpeakerView = getSpeakerView(context);
-	  var worstCaseTarget = last(realSpeakerView)
-        var likelyUtt = MAP(S1(worstCaseTarget, realSpeakerView, partnerWeighting))['val'];
+    var utility = expectation(possibleObjects, function (hiddenObj) {
+      return expectation(possibleWeightings, function (partnerWeighting) {
+        var context = baseContext.concat(hiddenObj + " private");
+        var realSpeakerView = getSpeakerView(context);
+        var worstCaseTarget = last(realSpeakerView);
+        var likelyUtt = MAP(
+          S1(worstCaseTarget, realSpeakerView, partnerWeighting)
+        )["val"];
         return L1(likelyUtt, context, ownWeighting).score(worstCaseTarget);
       });
     });
 
     // putting more weight on partner's perspective is costly
     factor(utility - ownWeighting * params.perspectiveCost);
-    return {weighting: ownWeighting, perspectiveCost: params.perspectiveCost,
-            alpha: params.alpha, uttCost: argv.uttCost};
+    return {
+      weighting: ownWeighting,
+      perspectiveCost: params.perspectiveCost,
+      alpha: params.alpha,
+      //uttCost: argv.uttCost,
+    };
   });
 };
 
-var target = contexts[0]['target']
-var speakerContext = contexts[0]['neutral'];
-//console.log(JSON.stringify(S1(target, speakerContext.concat(target), 0)))
+console.log(JSON.stringify(S1(target, speakerContext.concat(target), 0)));
+
 //console.log(JSON.stringify(RR_speaker(target, speakerContext.concat(target))))
-console.log(JSON.stringify(RR_listener(target, speakerContext.concat(target))))
+//console.log(JSON.stringify(RR_listener(target, speakerContext.concat(target))));
 // console.log('resource-rational weight for speaker');
 // csv.writeJoint(RR_speaker('texture_color_shape', speakerContext), './output/RRspeakerOutput' + argv.chainNum + '.csv');
 // console.log(MAP(RR_speaker('texture_color_shape', speakerContext)));
@@ -153,3 +391,18 @@ console.log(JSON.stringify(RR_listener(target, speakerContext.concat(target))))
 // console.log('resource-rational weight for listener');
 // csv.writeJoint(RR_listener('texture_color_shape', speakerContext), './output/RRlistenerOutput' + argv.chainNum + '.csv');
 // console.log(MAP(RR_listener('texture_color_shape', speakerContext)));
+//console.log("Speaker Distribution:", speakerDistribution);
+/*
+var result = S1(target, speakerContext.concat(target), 0);
+
+map(function (utt) {
+  console.log(
+    "Utterance: " + utt + ", Probability: " + Math.exp(result.score(utt))
+  );
+}, result.support());
+
+console.log(meaning("circle", "two small green square"));
+console.log(meaning("circle", "two small green square")); // why is it not returning false? It is always returning true
+console.log(meaning("circle", "two small green circle")); // should return true
+console.log(meaning("small green", "two small green square")); // should return true
+*/
