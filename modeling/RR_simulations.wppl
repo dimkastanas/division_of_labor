@@ -95,9 +95,9 @@ var meaning = function (utt, object) {
     // we check if all descriptors in the utterance are in the object's properties;
     // if yes, then we proceed with exhaustivity check
     var matchesSubset = _.every(
-      _.map(descriptors, function (descriptor) {
+      map(function (descriptor) {
         return _.includes(objProperties, descriptor);
-      })
+      }, descriptors)
     );
 
     if (!matchesSubset) return false;
@@ -126,9 +126,9 @@ var meaning = function (utt, object) {
 
   // without "only", we check if all descriptors in the utterance exist in the object
   return _.every(
-    _.map(descriptors, function (descriptor) {
+    map(function (descriptor) {
       return _.includes(objProperties, descriptor);
-    })
+    }, descriptors)
   );
 };
 
