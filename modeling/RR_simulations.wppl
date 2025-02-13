@@ -31,6 +31,7 @@ var possibleUtterances = Categorical({
     "two small green pentagon",
 
     // references using only
+
     "small only",
     "green only",
     "square only",
@@ -95,9 +96,9 @@ var meaning = function (utt, object) {
     // we check if all descriptors in the utterance are in the object's properties;
     // if yes, then we proceed with exhaustivity check
     var matchesSubset = _.every(
-      _.map(descriptors, function (descriptor) {
+      map(function (descriptor) {
         return _.includes(objProperties, descriptor);
-      })
+      }, descriptors)
     );
 
     if (!matchesSubset) return false;
@@ -126,9 +127,9 @@ var meaning = function (utt, object) {
 
   // without "only", we check if all descriptors in the utterance exist in the object
   return _.every(
-    _.map(descriptors, function (descriptor) {
+    map(function (descriptor) {
       return _.includes(objProperties, descriptor);
-    })
+    }, descriptors)
   );
 };
 
@@ -142,8 +143,13 @@ var getTrueUtterances = function (context) {
   }, possibleUtterances.support());
   return Categorical({ vs: trueUtts });
 };
-
+/*
 // cost of producing utterance is sum of costs of the component words
+var uttCost = function (utt) {
+  return params.costWeight * utt.split(" ").length;
+};
+*/
+
 var uttCost = function (utt) {
   return params.costWeight * utt.split(" ").length;
 };
@@ -200,9 +206,8 @@ var L0 = cache(function (utt, context, weighting) {
 });
 */
 
-// S1 selects utterance using fixed mixture of perspectives
-// (given belief about L0's mixture)
-
+/*
+// the original S1()
 var S1 = cache(function (target, context, ownWeighting) {
   return Infer({ method: "enumerate" }, function () {
     var utt = sample(getTrueUtterances(context));
@@ -228,6 +233,87 @@ var S1 = cache(function (target, context, ownWeighting) {
     return utt;
   });
 });
+*/
+
+var S1 = cache(function (target, context, ownWeighting) {
+  return Infer({ method: "enumerate" }, function () {
+    var utt = sample(getTrueUtterances(context)); // Sample an utterance
+
+    // what is the base cost (proportional to word count)
+    var baseCost = uttCost(utt);
+
+    // what is the additional cost for "only"
+    var onlyCost = _.includes(utt.split(" "), "only") ? 0.5 * ownWeighting : 0;
+
+    // egocentric utility (how well an utterance identifies the target from the speaker's perspective)
+    var egocentricUtility =
+      L0(utt, context, 0).score(target) - (baseCost + onlyCost);
+
+    // computes the expected utility of an utterance (speaker clarity + listener interpreation)
+    var combinedUtility = expectation(
+      possibleWeightings,
+      function (partnerWeighting) {
+        var asymmetricUtility = expectation(possibleObjects, function (obj) {
+          var possibleListenerView = context.concat(obj + " private");
+          return (
+            L0(utt, possibleListenerView, partnerWeighting).score(target) -
+            (baseCost + onlyCost)
+          );
+        });
+
+        return (
+          ownWeighting * asymmetricUtility +
+          (1 - ownWeighting) * egocentricUtility
+        );
+      }
+    );
+
+    factor(params.alpha * combinedUtility);
+
+    return utt;
+  });
+});
+
+/*
+// S1 selects utterance using fixed mixture of perspectives
+// (given belief about L0's mixture)~
+
+var S1 = cache(function (target, context, ownWeighting) {
+  return Infer({ method: "enumerate" }, function () {
+    var utt = sample(getTrueUtterances(context)); 
+
+    var onlyCost = _.includes(utt.split(" "), "only")
+      ? params.costWeight * 15 * ownWeighting
+      : 0;
+
+    // Calculate the egocentric utility (based on the target and context)
+    var egocentricUtility =
+      L0(utt, context, 0).score(target) - (uttCost(utt) + onlyCost);
+
+    var combinedUtility = expectation(
+      possibleWeightings,
+      function (partnerWeighting) {
+        var asymmetricUtility = expectation(possibleObjects, function (obj) {
+          var possibleListenerView = context.concat(obj + " private");
+          return (
+            L0(utt, possibleListenerView, partnerWeighting).score(target) -
+            (uttCost(utt) + onlyCost)
+          );
+        });
+
+        return (
+          ownWeighting * asymmetricUtility +
+          (1 - ownWeighting) * egocentricUtility
+        );
+      }
+    );
+
+    factor(params.alpha * combinedUtility);
+
+    return utt;
+  });
+});
+*/
 
 /*
 var S1 = cache(function (target, context, ownWeighting) {
@@ -380,7 +466,7 @@ var RR_listener = function (utt, baseContext) {
   });
 };
 
-console.log(JSON.stringify(S1(target, speakerContext.concat(target), 0)));
+//console.log(JSON.stringify(S1(target, speakerContext.concat(target), 0)));
 
 //console.log(JSON.stringify(RR_speaker(target, speakerContext.concat(target))))
 //console.log(JSON.stringify(RR_listener(target, speakerContext.concat(target))));
@@ -392,8 +478,8 @@ console.log(JSON.stringify(S1(target, speakerContext.concat(target), 0)));
 // csv.writeJoint(RR_listener('texture_color_shape', speakerContext), './output/RRlistenerOutput' + argv.chainNum + '.csv');
 // console.log(MAP(RR_listener('texture_color_shape', speakerContext)));
 //console.log("Speaker Distribution:", speakerDistribution);
-/*
-var result = S1(target, speakerContext.concat(target), 0);
+
+var result = S1(target, speakerContext.concat(target), 1);
 
 map(function (utt) {
   console.log(
@@ -401,8 +487,9 @@ map(function (utt) {
   );
 }, result.support());
 
-console.log(meaning("circle", "two small green square"));
-console.log(meaning("circle", "two small green square")); // why is it not returning false? It is always returning true
+/*
+console.log(meaning("circle", "two small green square")); // shouls return false
+console.log(meaning("circle", "two small green square")); // should reutrn false
 console.log(meaning("circle", "two small green circle")); // should return true
 console.log(meaning("small green", "two small green square")); // should return true
 */
