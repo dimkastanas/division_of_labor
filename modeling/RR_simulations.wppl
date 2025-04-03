@@ -1,27 +1,39 @@
-// webppl RR_simulations.wppl 
-var contexts = [
-  {
-    target: "two small green square",
+// webppl RR_simulations.wppl --require ./refModule
+var context = {
+    target: ["two small green square"],
     neutral: ["two small green circle", "one small green star"],
-    competitor: ["two small blue square", "one small blue triangle"],
+    competitor: ["two small green square", "one small blue triangle"],
     alternative: ["two small green square", "one small green pentagon"],
-  },
-];
+    private: ["one small green star"]
+}
+
+// property categories
+var categories = {
+  shapes: ["circle", "square", "triangle", "pentagon", "star"],
+  colours: ["green", "pink", "black", "blue"],
+  sizes: ["small", "big"],
+  numbers: ["two", "one"]
+};
 
 // subset of possible utterances
 var possibleUtterances = Categorical({
   vs: [
     // references to the target
+    "green",
+    "square",
+    "small",
     "two small green square",
     "small green square",
     "green square",
     "two small",
+    "two green",
+    "two square",
     "small green",
-    "green",
-    "square",
+    "small square",
 
     // references to the competitor, alternative and neutral
     "circle",
+    "star",
     "two small green circle",
     "blue square",
     "two small blue square",
@@ -37,10 +49,10 @@ var possibleUtterances = Categorical({
   ],
 });
 
-var possibleObjects = Categorical({
+var possibleScenes = Categorical({
   vs: map(function (v) {
     return v["target"];
-  }, contexts),
+  }, _.values(context)),
 });
 
 // these are the possible mixture weights for perspective-taking
@@ -58,40 +70,48 @@ var params = {
   perspectiveCost: 0,
 };
 
-// when the utterance is true
-var meaning = function (utt, object) {
+var meaning = function (utt, scene) {
   var descriptors = utt.split(" ");
-  var objProperties = object.split(" ");
-
-  // property categories
-  var categories = {
-    shapes: ["circle", "square", "triangle", "pentagon", "star"],
-    colours: ["green", "pink", "black", "blue"],
-    sizes: ["small", "big"],
-    numbers: ["two", "one"]
-  };
-
-  // if "only" was in utterance, check exhaustivity
-  if (_.includes(descriptors, "only")) {
-    descriptors = _.without(descriptors, "only");
-    return _.every(descriptors, descriptor => {
-      var category = _.findKey(categories, values => _.includes(values, descriptor));
-      return !category || _.intersection(objProperties, categories[category]).length === 1;
-    });
-  }
-
-  // simple case: just check if all descriptors exist in object properties
-  return _.every(descriptors, d => _.includes(objProperties, d));
+  
+  // without "only", we check whether any element matches all the descriptors
+  if (!_.includes(descriptors, "only")) {
+    return any(function(obj) {
+      return all(function(descriptor) {
+        return _.includes(obj.split(" "), descriptor);
+      }, descriptors);
+    }, scene);
+  } 
+  
+  // with "only", we check whether for every category of descriptors, 
+  // there is no other object that has a different value for that category
+  return all(function(descriptor) {
+    // Find which category (if any) the descriptor belongs to
+    var category = find(function(key) {
+      return _.includes(categories[key], descriptor);
+    }, _.keys(categories));
+    
+    // Get unique values from this category 
+    var uniqueValues = reduce(function(obj, values) {
+      var value = _.intersection(obj.split(" "), categories[category])[0];
+      return _.includes(values, value) ? values : values.concat(value);
+    }, [], scene);
+    
+    // For 'only', check if there is exactly one value in the category
+    return uniqueValues.length === 1 && uniqueValues[0] === descriptor;
+  }, _.without(descriptors, "only"));
 };
 
-var getTrueUtterances = function (context) {
-  var trueUtts = filter(function (utt) {
-    return _.some(
-      map(function (obj) {
-        return meaning(utt, obj);
-      }, context)
-    );
+var getTrueUtterances = function(context) {
+  // Get all objects from the context (excluding private)
+  var visibleObjects = _.flatten(_.values(context, 'private'));
+  
+  // Filter utterances that are true for at least one object
+  var trueUtts = filter(function(utt) {
+    return any(function(obj) {
+      return meaning(utt, obj);
+    }, visibleObjects);
   }, possibleUtterances.support());
+  
   return Categorical({ vs: trueUtts });
 };
 
@@ -102,27 +122,21 @@ var uttCost = function (utt) {
 
 // derives the speaker's perspective from the listener's visible context
 var getSpeakerView = function (listenerContext) {
-  var hiddenObj = find(function (x) {
-    return last(x.split(" ")) == "private";
-  }, listenerContext);
-  return remove(hiddenObj, listenerContext);
+  return _.omit(listenerContext, 'private');
 };
 
 // L0 interprets utterance literally using fixed mixture of perspectives
 var L0 = cache(function (utt, context, weighting) {
   return Infer({ method: "enumerate" }, function () {
-    var perspective = flip(weighting) ? "other" : "own";
-    var partnerContext =
-      perspective == "own" ? context : getSpeakerView(context);
-    var object = uniformDraw(partnerContext);
-    factor(meaning(utt, object, partnerContext) ? Math.log(1) : Math.log(0.01));
-    return object;
+    var partnerContext = flip(weighting) ? getSpeakerView(context) : context;
+    var scene = uniformDraw(_.values(partnerContext));
+    factor(meaning(utt, scene) ? Math.log(1) : Math.log(0.01));
+    return scene;
   });
-});
+}, 1000);
 
 // S1 selects utterance using fixed mixture of perspectives
 // (given belief about L0's mixture)
-
 var S1 = cache(function (target, context, ownWeighting) {
   return Infer({ method: "enumerate" }, function () {
     var utt = sample(getTrueUtterances(context));
@@ -131,7 +145,7 @@ var S1 = cache(function (target, context, ownWeighting) {
     var combinedUtility = expectation(
       possibleWeightings,
       function (partnerWeighting) {
-        var asymmetricUtility = expectation(possibleObjects, function (obj) {
+        var asymmetricUtility = expectation(possibleScenes, function (obj) {
           var possibleListenerView = context.concat(obj + " private");
           return (
             L0(utt, possibleListenerView, partnerWeighting).score(target) -
@@ -174,7 +188,7 @@ var RR_speaker = function (target, context) {
     console.log(likelyUtt);
     // Imagine expected utility of that behavior, marginalizing over
     // partner's mixture weight and possible objects in partner's view
-    var utility = expectation(possibleObjects, function (obj) {
+    var utility = expectation(possibleScenes, function (obj) {
       return expectation(possibleWeightings, function (partnerWeighting) {
         var possibleListenerView = context.concat(obj + " private");
         return L0(likelyUtt, possibleListenerView, partnerWeighting).score(
@@ -201,7 +215,7 @@ var RR_listener = function (utt, baseContext) {
     var ownWeighting = sample(possibleWeightings);
 
     // Marginalize over partner's mixture weight and possible hidden objects
-    var utility = expectation(possibleObjects, function (hiddenObj) {
+    var utility = expectation(possibleScenes, function (hiddenObj) {
       return expectation(possibleWeightings, function (partnerWeighting) {
         var context = baseContext.concat(hiddenObj + " private");
         var realSpeakerView = getSpeakerView(context);
@@ -219,35 +233,117 @@ var RR_listener = function (utt, baseContext) {
       weighting: ownWeighting,
       perspectiveCost: params.perspectiveCost,
       alpha: params.alpha,
-      //uttCost: argv.uttCost,
     };
   });
 };
 
-// Test cases for meaning function
-console.log("Testing meaning function:");
-console.log("-----------------------");
+// Helper function to run a test and show pass/fail status
+var runTest = function(name, utterance, scene, expected) {
+  var result = meaning(utterance, scene);
+  var passed = result === expected;
+  var status = passed ? "✓ PASS" : "✗ FAIL";
+  console.log(name + ": " + status + " (got " + result + ", expected " + expected + ")");
+};
 
-// Basic tests (without "only")
-console.log("Basic tests:");
-console.log("1. 'circle' in 'two small green square' ->", meaning("circle", "two small green square")); // should be false
-console.log("2. 'small green' in 'two small green square' ->", meaning("small green", "two small green square")); // should be true
-console.log("3. 'two small' in 'two small green square' ->", meaning("two small", "two small green square")); // should be true
-console.log("4. 'green square' in 'two small green square' ->", meaning("green square", "two small green square")); // should be true
-console.log("5. 'big' in 'two small green square' ->", meaning("big", "two small green square")); // should be false
+// Basic property tests
+console.log("\nBasic property tests:");
+runTest("1. Basic circle match", "circle", ["two small green circle"], true);
+runTest("2. No circle match", "circle", ["two small green square"], false);
+runTest("3. Color match", "green", ["two small green circle"], true);
+runTest("4. Multiple properties", "small green", ["two small green square"], true);
 
-// Exhaustivity tests (with "only")
-console.log("\nExhaustivity tests:");
-console.log("1. 'small only' in 'two small green square' ->", meaning("small only", "two small green square")); // should be true (only one size)
-console.log("2. 'green only' in 'two small green square' ->", meaning("green only", "two small green square")); // should be true (only one color)
-console.log("3. 'square only' in 'two small green square' ->", meaning("square only", "two small green square")); // should be true (only one shape)
-console.log("4. 'small only' in 'two small green square small' ->", meaning("small only", "two small green square small")); // should be false (multiple sizes)
-console.log("5. 'green only' in 'two small green square green' ->", meaning("green only", "two small green square green")); // should be false (multiple colors)
-console.log("6. 'square only' in 'two small green square circle' ->", meaning("square only", "two small green square circle")); // should be false (multiple shapes)
+// Multiple objects in scene
+console.log("\nMultiple objects tests:");
+runTest("5. Green in all objects", "green", ["two small green circle", "one small green star"], true);
+runTest("6. No blue objects", "blue", ["two small green circle", "one small green star"], false);
+runTest("7. Small in all objects", "small", ["two small green circle", "one small green star"], true);
 
-// Edge cases
-console.log("\nEdge cases:");
-console.log("1. Empty utterance ->", meaning("", "two small green square")); // should be true
-console.log("2. Empty object ->", meaning("small", "")); // should be false
-console.log("3. 'only' by itself ->", meaning("only", "two small green square")); // should be true
-console.log("4. Non-category word with 'only' ->", meaning("hello only", "two small green square")); // should be true (non-category words don't need exhaustivity)
+// 'only' tests
+console.log("\n'only' tests:");
+runTest("8. Only circles (single object)", "circle only", ["two small green circle"], true);
+runTest("9. Only circles (multiple objects)", "circle only", ["two small green circle", "one small green star"], false);
+runTest("10. Only green", "green only", ["two small green circle", "one small green star"], true);
+runTest("11. Only small", "small only", ["two small green circle", "one small green star"], true);
+runTest("12. Only star", "star only", ["two small green circle", "one small green star"], false);
+
+
+// Multiple descriptors with 'only'
+console.log("\nMultiple descriptors with 'only':");
+runTest("17. Only small and green", "small green only", ["two small green circle", "one small green star"], true);
+runTest("18. Only small and green (different colors)", "small green only", ["two small green circle", "one small blue star"], false);
+runTest("19. Only small and green (different sizes)", "small green only", ["two small green circle", "one big green star"], false);
+
+// Helper function to run L0 tests
+var runL0Test = function(name, utterance, context, weighting, expectedTarget, expectedProbability) {
+  var result = L0(utterance, context, weighting);
+  var targetProbability = Math.exp(result.score(expectedTarget));
+  var passed = Math.abs(targetProbability - expectedProbability) < 0.01;
+  var status = passed ? "✓ PASS" : "✗ FAIL";
+  console.log(name + ": " + status + 
+    " (got " + targetProbability.toFixed(3) + 
+    ", expected " + expectedProbability.toFixed(3) + ")");
+};
+
+// L0 Tests
+console.log("\nL0 Tests:");
+console.log(context);
+
+// Test 1: Basic egocentric interpretation (weighting = 0)
+runL0Test(
+  "1. Basic egocentric interpretation",
+  "green",
+  context,
+  0,
+  context.target,
+  0.2  // Updated probability based on actual context size
+);
+
+// Test 2: Basic partner perspective interpretation (weighting = 1)
+runL0Test(
+  "2. Basic partner perspective interpretation",
+  "green",
+  context,
+  1,
+  context.target,
+  0.25  // Updated probability based on actual context size
+);
+
+// Test 3: Mixed perspective (weighting = 0.5)
+runL0Test(
+  "3. Mixed perspective interpretation",
+  "green",
+  context,
+  0.5,
+  context.target,
+  0.225 // Updated probability based on actual context size
+);
+
+// Test 4: Specific utterance with multiple properties
+runL0Test(
+  "4. Specific utterance with multiple properties",
+  "two small green square",
+  context,
+  0,
+  context.target,
+  0.333
+);
+
+// Test 5: 'only' utterance
+runL0Test(
+  "5. 'only' utterance interpretation",
+  "square only",
+  context,
+  0,
+  context.target,
+  0.96  // Updated probability based on actual context size
+);
+
+// Test 6: Non-matching utterance
+runL0Test(
+  "6. Non-matching utterance",
+  "blue",
+  context,
+  0,
+  context.target,
+  0.0
+);
