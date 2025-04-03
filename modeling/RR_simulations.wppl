@@ -41,6 +41,7 @@ var possibleUtterances = Categorical({
     "two small green pentagon",
 
     // references using only
+
     "small only",
     "green only",
     "square only",
@@ -114,8 +115,13 @@ var getTrueUtterances = function(context) {
   
   return Categorical({ vs: trueUtts });
 };
-
+/*
 // cost of producing utterance is sum of costs of the component words
+var uttCost = function (utt) {
+  return params.costWeight * utt.split(" ").length;
+};
+*/
+
 var uttCost = function (utt) {
   return params.costWeight * utt.split(" ").length;
 };
@@ -162,6 +168,87 @@ var S1 = cache(function (target, context, ownWeighting) {
     return utt;
   });
 });
+*/
+
+var S1 = cache(function (target, context, ownWeighting) {
+  return Infer({ method: "enumerate" }, function () {
+    var utt = sample(getTrueUtterances(context)); // Sample an utterance
+
+    // what is the base cost (proportional to word count)
+    var baseCost = uttCost(utt);
+
+    // what is the additional cost for "only"
+    var onlyCost = _.includes(utt.split(" "), "only") ? 0.5 * ownWeighting : 0;
+
+    // egocentric utility (how well an utterance identifies the target from the speaker's perspective)
+    var egocentricUtility =
+      L0(utt, context, 0).score(target) - (baseCost + onlyCost);
+
+    // computes the expected utility of an utterance (speaker clarity + listener interpreation)
+    var combinedUtility = expectation(
+      possibleWeightings,
+      function (partnerWeighting) {
+        var asymmetricUtility = expectation(possibleObjects, function (obj) {
+          var possibleListenerView = context.concat(obj + " private");
+          return (
+            L0(utt, possibleListenerView, partnerWeighting).score(target) -
+            (baseCost + onlyCost)
+          );
+        });
+
+        return (
+          ownWeighting * asymmetricUtility +
+          (1 - ownWeighting) * egocentricUtility
+        );
+      }
+    );
+
+    factor(params.alpha * combinedUtility);
+
+    return utt;
+  });
+});
+
+/*
+// S1 selects utterance using fixed mixture of perspectives
+// (given belief about L0's mixture)~
+
+var S1 = cache(function (target, context, ownWeighting) {
+  return Infer({ method: "enumerate" }, function () {
+    var utt = sample(getTrueUtterances(context)); 
+
+    var onlyCost = _.includes(utt.split(" "), "only")
+      ? params.costWeight * 15 * ownWeighting
+      : 0;
+
+    // Calculate the egocentric utility (based on the target and context)
+    var egocentricUtility =
+      L0(utt, context, 0).score(target) - (uttCost(utt) + onlyCost);
+
+    var combinedUtility = expectation(
+      possibleWeightings,
+      function (partnerWeighting) {
+        var asymmetricUtility = expectation(possibleObjects, function (obj) {
+          var possibleListenerView = context.concat(obj + " private");
+          return (
+            L0(utt, possibleListenerView, partnerWeighting).score(target) -
+            (uttCost(utt) + onlyCost)
+          );
+        });
+
+        return (
+          ownWeighting * asymmetricUtility +
+          (1 - ownWeighting) * egocentricUtility
+        );
+      }
+    );
+
+    factor(params.alpha * combinedUtility);
+
+    return utt;
+  });
+});
+*/
 
 // L1 selects objects given belief about S1's mixture
 var L1 = function (utt, context, ownWeighting) {
@@ -265,7 +352,6 @@ runTest("9. Only circles (multiple objects)", "circle only", ["two small green c
 runTest("10. Only green", "green only", ["two small green circle", "one small green star"], true);
 runTest("11. Only small", "small only", ["two small green circle", "one small green star"], true);
 runTest("12. Only star", "star only", ["two small green circle", "one small green star"], false);
-
 
 // Multiple descriptors with 'only'
 console.log("\nMultiple descriptors with 'only':");
