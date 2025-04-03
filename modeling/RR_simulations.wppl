@@ -1,6 +1,4 @@
-// webppl RR_simulations.wppl --require ./refModule
-
-/*var contexts = json.read("input/all_world_states.json");*/
+// webppl RR_simulations.wppl 
 var contexts = [
   {
     target: "two small green square",
@@ -45,10 +43,6 @@ var possibleObjects = Categorical({
   }, contexts),
 });
 
-/*var possibleUtterances = Categorical({
-  vs: json.read("input/possibleExpressionsWithOnly.json"),
-});*/
-
 // these are the possible mixture weights for perspective-taking
 // where 0 is purely egocentric and 1 is purely partner's perspective
 var possibleWeightings = Categorical({
@@ -63,73 +57,31 @@ var params = {
   costWeight: 0.02,
   perspectiveCost: 0,
 };
-/*
-// utterance is true if object has all of the mentioned features
-var meaning = function (utt, object) {
-  var descriptors = utt.split(" ");
-  var objProperties = object.split(" ");
-  var matches = _.every(
-    map(function (descriptor) {
-      return _.includes(objProperties, descriptor);
-    }, descriptors)
-  );
-  return matches;
-};
-*/
 
 // when the utterance is true
 var meaning = function (utt, object) {
   var descriptors = utt.split(" ");
   var objProperties = object.split(" ");
 
-  // we define property categories
-  var shapes = ["circle", "square", "triangle", "pentagon", "star"];
-  var colours = ["green", "pink", "black", "blue"];
-  var sizes = ["small", "big"];
-  var numbers = ["two", "one"];
+  // property categories
+  var categories = {
+    shapes: ["circle", "square", "triangle", "pentagon", "star"],
+    colours: ["green", "pink", "black", "blue"],
+    sizes: ["small", "big"],
+    numbers: ["two", "one"]
+  };
 
-  // we handle "only" cases
+  // if "only" was in utterance, check exhaustivity
   if (_.includes(descriptors, "only")) {
-    var descriptors = _.without(descriptors, "only");
-
-    // we check if all descriptors in the utterance are in the object's properties;
-    // if yes, then we proceed with exhaustivity check
-    var matchesSubset = _.every(
-      map(function (descriptor) {
-        return _.includes(objProperties, descriptor);
-      }, descriptors)
-    );
-
-    if (!matchesSubset) return false;
-
-    // we check for exhaustivity within the relevant category of the descriptor
-    // if the utterance contains a shape descriptor (e.g., circle), the object must have exactly one shape
-    // the same holds for colours, sizes and numbers
-    var exhaustivityCheck = _.every(descriptors, function (descriptor) {
-      if (_.includes(shapes, descriptor)) {
-        return _.intersection(objProperties, shapes).length === 1;
-      }
-      if (_.includes(colours, descriptor)) {
-        return _.intersection(objProperties, colours).length === 1;
-      }
-      if (_.includes(sizes, descriptor)) {
-        return _.intersection(objProperties, sizes).length === 1;
-      }
-      if (_.includes(numbers, descriptor)) {
-        return _.intersection(objProperties, numbers).length === 1;
-      }
-      return true; // properties not in a category ('and' etc.) are not subject to exhaustivity checks
+    descriptors = _.without(descriptors, "only");
+    return _.every(descriptors, descriptor => {
+      var category = _.findKey(categories, values => _.includes(values, descriptor));
+      return !category || _.intersection(objProperties, categories[category]).length === 1;
     });
-
-    return exhaustivityCheck;
   }
 
-  // without "only", we check if all descriptors in the utterance exist in the object
-  return _.every(
-    map(function (descriptor) {
-      return _.includes(objProperties, descriptor);
-    }, descriptors)
-  );
+  // simple case: just check if all descriptors exist in object properties
+  return _.every(descriptors, d => _.includes(objProperties, d));
 };
 
 var getTrueUtterances = function (context) {
@@ -168,38 +120,6 @@ var L0 = cache(function (utt, context, weighting) {
   });
 });
 
-/*
-var L0 = cache(function (utt, context, weighting) {
-  return Infer({ method: "enumerate" }, function () {
-    console.log("L0 Debug -> Start");
-    console.log("utterance:", utt);
-    console.log("context:", context);
-    console.log("weighting:", weighting);
-
-    var perspective = flip(weighting) ? "other" : "own";
-    var partnerContext =
-      perspective == "own" ? context : getSpeakerView(context);
-
-    console.log("exploring path:", { utt, context, weighting, partnerContext }); 
-    console.log("partner context:", partnerContext);
-
-    var object = uniformDraw(partnerContext);
-    console.log("selected object:", object);
-
-    var isMeaningful = meaning(utt, object, partnerContext);
-    console.log("meaning check:", isMeaningful);
-
-    factor(isMeaningful ? Math.log(0.9) : Math.log(0.1));
-    console.log(
-      "Score (factor):",
-      isMeaningful ? Math.log(1.0) : Math.log(0.01)
-    );
-
-    return object;
-  });
-});
-*/
-
 // S1 selects utterance using fixed mixture of perspectives
 // (given belief about L0's mixture)
 
@@ -228,82 +148,6 @@ var S1 = cache(function (target, context, ownWeighting) {
     return utt;
   });
 });
-
-/*
-var S1 = cache(function (target, context, ownWeighting) {
-  console.log("S1 called with:");
-  console.log("Target:", target);
-  console.log("Context:", context);
-  console.log("OwnWeighting:", ownWeighting);
-  console.log("possibleWeightings support:", possibleWeightings.support());
-  console.log("possibleObjects support:", possibleObjects.support());
-
-  // debug the output of getTrueUtterances()
-  var trueUtts = getTrueUtterances(context);
-  console.log("True Utterances:", trueUtts.support()); 
-
-  return Infer({ method: "enumerate" }, function () {
-    var utt = sample(getTrueUtterances(context));
-    console.log("Utterance (utt):", utt);
-    console.log("Utterance Cost:", uttCost(utt, params));
-
-    var egocentricUtility =
-      L0(utt, context, 0).score(target) - uttCost(utt, params);
-    console.log("Egocentric Utility:", egocentricUtility);
-
-    var combinedUtility = expectation(
-      possibleWeightings,
-      function (partnerWeighting) {
-        var asymmetricUtility = expectation(possibleObjects, function (obj) {
-          var possibleListenerView = context.concat(obj + " private");
-          var score = L0(utt, possibleListenerView, partnerWeighting).score(
-            target
-          );
-          console.log("Object:", obj);
-          console.log("Possible Listener View:", possibleListenerView);
-          console.log("L0 Score for Object:", score);
-          return score - uttCost(utt, params);
-        });
-        console.log("Asymmetric Utility:", asymmetricUtility);
-
-        return (
-          ownWeighting * asymmetricUtility +
-          (1 - ownWeighting) * egocentricUtility
-        );
-      }
-    );
-    console.log("Combined Utility:", combinedUtility);
-    console.log("Alpha:", params.alpha, "CostWeight:", params.costWeight);
-
-    factor(params.alpha * combinedUtility);
-    return utt;
-  });
-});
-*/
-var target = contexts[0]["target"];
-var speakerContext = contexts[0]["neutral"]
-  .concat(contexts[0]["competitor"])
-  .concat(contexts[0]["alternative"]);
-
-/*
-// var speakerContext = contexts[0]["neutral"];
-var ownWeighting = 0.8;
-
-var speakerDistribution = S1(target, speakerContext, ownWeighting);
-
-//console.log("Speaker Distribution:", speakerDistribution);
-console.log(speakerDistribution.support());
-
-// log utterances with their probabilities instead of log-probabilities
-console.log(
-  speakerDistribution.support().map(function (utt) {
-    return {
-      utt: utt, 
-      prob: Math.exp(speakerDistribution.score(utt)), // convert log-probability to probability
-    };
-  })
-);
-*/
 
 // L1 selects objects given belief about S1's mixture
 var L1 = function (utt, context, ownWeighting) {
@@ -380,29 +224,30 @@ var RR_listener = function (utt, baseContext) {
   });
 };
 
-console.log(JSON.stringify(S1(target, speakerContext.concat(target), 0)));
+// Test cases for meaning function
+console.log("Testing meaning function:");
+console.log("-----------------------");
 
-//console.log(JSON.stringify(RR_speaker(target, speakerContext.concat(target))))
-//console.log(JSON.stringify(RR_listener(target, speakerContext.concat(target))));
-// console.log('resource-rational weight for speaker');
-// csv.writeJoint(RR_speaker('texture_color_shape', speakerContext), './output/RRspeakerOutput' + argv.chainNum + '.csv');
-// console.log(MAP(RR_speaker('texture_color_shape', speakerContext)));
+// Basic tests (without "only")
+console.log("Basic tests:");
+console.log("1. 'circle' in 'two small green square' ->", meaning("circle", "two small green square")); // should be false
+console.log("2. 'small green' in 'two small green square' ->", meaning("small green", "two small green square")); // should be true
+console.log("3. 'two small' in 'two small green square' ->", meaning("two small", "two small green square")); // should be true
+console.log("4. 'green square' in 'two small green square' ->", meaning("green square", "two small green square")); // should be true
+console.log("5. 'big' in 'two small green square' ->", meaning("big", "two small green square")); // should be false
 
-// console.log('resource-rational weight for listener');
-// csv.writeJoint(RR_listener('texture_color_shape', speakerContext), './output/RRlistenerOutput' + argv.chainNum + '.csv');
-// console.log(MAP(RR_listener('texture_color_shape', speakerContext)));
-//console.log("Speaker Distribution:", speakerDistribution);
-/*
-var result = S1(target, speakerContext.concat(target), 0);
+// Exhaustivity tests (with "only")
+console.log("\nExhaustivity tests:");
+console.log("1. 'small only' in 'two small green square' ->", meaning("small only", "two small green square")); // should be true (only one size)
+console.log("2. 'green only' in 'two small green square' ->", meaning("green only", "two small green square")); // should be true (only one color)
+console.log("3. 'square only' in 'two small green square' ->", meaning("square only", "two small green square")); // should be true (only one shape)
+console.log("4. 'small only' in 'two small green square small' ->", meaning("small only", "two small green square small")); // should be false (multiple sizes)
+console.log("5. 'green only' in 'two small green square green' ->", meaning("green only", "two small green square green")); // should be false (multiple colors)
+console.log("6. 'square only' in 'two small green square circle' ->", meaning("square only", "two small green square circle")); // should be false (multiple shapes)
 
-map(function (utt) {
-  console.log(
-    "Utterance: " + utt + ", Probability: " + Math.exp(result.score(utt))
-  );
-}, result.support());
-
-console.log(meaning("circle", "two small green square"));
-console.log(meaning("circle", "two small green square")); // why is it not returning false? It is always returning true
-console.log(meaning("circle", "two small green circle")); // should return true
-console.log(meaning("small green", "two small green square")); // should return true
-*/
+// Edge cases
+console.log("\nEdge cases:");
+console.log("1. Empty utterance ->", meaning("", "two small green square")); // should be true
+console.log("2. Empty object ->", meaning("small", "")); // should be false
+console.log("3. 'only' by itself ->", meaning("only", "two small green square")); // should be true
+console.log("4. Non-category word with 'only' ->", meaning("hello only", "two small green square")); // should be true (non-category words don't need exhaustivity)
