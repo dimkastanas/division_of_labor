@@ -2,9 +2,8 @@
 var context = {
     target: ["two small green square"],
     neutral: ["two small green circle", "one small green star"],
-    competitor: ["two small green square", "one small blue triangle"],
-    alternative: ["two small green square", "one small green pentagon"],
-    private: ["one small green star"]
+    competitor: ["two small green circle", "one small blue square"],
+    alternative: ["two small green circle", "one small green pentagon"]
 }
 
 // property categories
@@ -25,11 +24,11 @@ var possibleUtterances = Categorical({
     "two small green square",
     "small green square",
     "green square",
+    "small square",
+    "small green",
     "two small",
     "two green",
     "two square",
-    "small green",
-    "small square",
 
     // references to the competitor, alternative and neutral
     "circle",
@@ -41,7 +40,6 @@ var possibleUtterances = Categorical({
     "two small green pentagon",
 
     // references using only
-
     "small only",
     "green only",
     "square only",
@@ -50,11 +48,7 @@ var possibleUtterances = Categorical({
   ],
 });
 
-var possibleScenes = Categorical({
-  vs: map(function (v) {
-    return v["target"];
-  }, _.values(context)),
-});
+var possibleScenes = Categorical({vs: [context['target'].concat(["two small blue square"])]});
 
 // these are the possible mixture weights for perspective-taking
 // where 0 is purely egocentric and 1 is purely partner's perspective
@@ -66,8 +60,8 @@ var possibleWeightings = Categorical({
 // <feature>Cost: cost associated with producing this feature
 // perspectiveCost: cost associated with perspective-taking
 var params = {
-  alpha: 3,
-  costWeight: 0.02,
+  alpha: 5,
+  costWeight: 0.2,
   perspectiveCost: 0,
 };
 
@@ -83,10 +77,9 @@ var meaning = function (utt, scene) {
     }, scene);
   } 
   
-  // with "only", we check whether for every category of descriptors, 
-  // there is no other object that has a different value for that category
   return all(function(descriptor) {
-    // Find which category (if any) the descriptor belongs to
+    // otherwise, with "only", we check whether for every category of descriptors, 
+    // there is no other object that has a different value for that category
     var category = find(function(key) {
       return _.includes(categories[key], descriptor);
     }, _.keys(categories));
@@ -102,25 +95,19 @@ var meaning = function (utt, scene) {
   }, _.without(descriptors, "only"));
 };
 
-var getTrueUtterances = function(context) {
-  // Get all objects from the context (excluding private)
-  var visibleObjects = _.flatten(_.values(context, 'private'));
-  
-  // Filter utterances that are true for at least one object
-  var trueUtts = filter(function(utt) {
-    return any(function(obj) {
-      return meaning(utt, obj);
-    }, visibleObjects);
-  }, possibleUtterances.support());
-  
-  return Categorical({ vs: trueUtts });
-};
-/*
-// cost of producing utterance is sum of costs of the component words
-var uttCost = function (utt) {
-  return params.costWeight * utt.split(" ").length;
-};
-*/
+// var getTrueUtterances = function(context) {
+//   // Get all scenes from the context (excluding private)
+//   var visibleScenes = _.values(context);
+
+//   // Filter utterances that are true for at least one object
+//   var trueUtts = filter(function(utt) {
+//     return any(function(obj) {
+//       console.log(obj)
+//       return meaning(utt, obj);
+//     }, visibleScenes);
+//   }, possibleUtterances.support());
+//   return Categorical({ vs: trueUtts });
+// };
 
 var uttCost = function (utt) {
   return params.costWeight * utt.split(" ").length;
@@ -139,118 +126,28 @@ var L0 = cache(function (utt, context, weighting) {
     factor(meaning(utt, scene) ? Math.log(1) : Math.log(0.01));
     return scene;
   });
-}, 1000);
+});
 
 // S1 selects utterance using fixed mixture of perspectives
 // (given belief about L0's mixture)
 var S1 = cache(function (target, context, ownWeighting) {
   return Infer({ method: "enumerate" }, function () {
-    var utt = sample(getTrueUtterances(context));
-    var egocentricUtility =
-      L0(utt, context, 0).score(target) - uttCost(utt, params);
-    var combinedUtility = expectation(
-      possibleWeightings,
-      function (partnerWeighting) {
-        var asymmetricUtility = expectation(possibleScenes, function (obj) {
-          var possibleListenerView = context.concat(obj + " private");
-          return (
-            L0(utt, possibleListenerView, partnerWeighting).score(target) -
-            uttCost(utt, params)
-          );
-        });
-        return (
-          ownWeighting * asymmetricUtility +
-          (1 - ownWeighting) * egocentricUtility
-        );
-      }
-    );
-    factor(params.alpha * combinedUtility);
-    return utt;
-  });
-});
-*/
-
-var S1 = cache(function (target, context, ownWeighting) {
-  return Infer({ method: "enumerate" }, function () {
-    var utt = sample(getTrueUtterances(context)); // Sample an utterance
-
-    // what is the base cost (proportional to word count)
-    var baseCost = uttCost(utt);
-
-    // what is the additional cost for "only"
-    var onlyCost = _.includes(utt.split(" "), "only") ? 0.5 * ownWeighting : 0;
-
-    // egocentric utility (how well an utterance identifies the target from the speaker's perspective)
-    var egocentricUtility =
-      L0(utt, context, 0).score(target) - (baseCost + onlyCost);
-
-    // computes the expected utility of an utterance (speaker clarity + listener interpreation)
-    var combinedUtility = expectation(
-      possibleWeightings,
-      function (partnerWeighting) {
-        var asymmetricUtility = expectation(possibleObjects, function (obj) {
-          var possibleListenerView = context.concat(obj + " private");
-          return (
-            L0(utt, possibleListenerView, partnerWeighting).score(target) -
-            (baseCost + onlyCost)
-          );
-        });
-
-        return (
-          ownWeighting * asymmetricUtility +
-          (1 - ownWeighting) * egocentricUtility
-        );
-      }
-    );
-
-    factor(params.alpha * combinedUtility);
-
+    var utt = sample(possibleUtterances);
+    var egocentricUtility = L0(utt, context, 0).score(target) 
+    var combinedUtility = expectation(possibleWeightings, function (partnerWeighting) {
+      var asymmetricUtility = expectation(possibleScenes, function (scene) {
+        var possibleListenerView = extend(context, {'private' : scene});
+        return (L0(utt, possibleListenerView, partnerWeighting).score(target));
+      });
+      return (ownWeighting * asymmetricUtility +
+              (1 - ownWeighting) * egocentricUtility);
+    });
+    factor(params.alpha * (combinedUtility - uttCost(utt, params)));
     return utt;
   });
 });
 
-/*
-// S1 selects utterance using fixed mixture of perspectives
-// (given belief about L0's mixture)~
-
-var S1 = cache(function (target, context, ownWeighting) {
-  return Infer({ method: "enumerate" }, function () {
-    var utt = sample(getTrueUtterances(context)); 
-
-    var onlyCost = _.includes(utt.split(" "), "only")
-      ? params.costWeight * 15 * ownWeighting
-      : 0;
-
-    // Calculate the egocentric utility (based on the target and context)
-    var egocentricUtility =
-      L0(utt, context, 0).score(target) - (uttCost(utt) + onlyCost);
-
-    var combinedUtility = expectation(
-      possibleWeightings,
-      function (partnerWeighting) {
-        var asymmetricUtility = expectation(possibleObjects, function (obj) {
-          var possibleListenerView = context.concat(obj + " private");
-          return (
-            L0(utt, possibleListenerView, partnerWeighting).score(target) -
-            (uttCost(utt) + onlyCost)
-          );
-        });
-
-        return (
-          ownWeighting * asymmetricUtility +
-          (1 - ownWeighting) * egocentricUtility
-        );
-      }
-    );
-
-    factor(params.alpha * combinedUtility);
-
-    return utt;
-  });
-});
-*/
-
-// L1 selects objects given belief about S1's mixture
+// L1 selects scenes given belief about S1's mixture
 var L1 = function (utt, context, ownWeighting) {
   return Infer({ method: "enumerate" }, function () {
     var perspective = flip(ownWeighting) ? "other" : "own";
@@ -272,7 +169,6 @@ var RR_speaker = function (target, context) {
 
     // Imagine how speaker with this weight would behave
     var likelyUtt = MAP(S1(target, context, ownWeighting))["val"];
-    console.log(likelyUtt);
     // Imagine expected utility of that behavior, marginalizing over
     // partner's mixture weight and possible objects in partner's view
     var utility = expectation(possibleScenes, function (obj) {
@@ -283,7 +179,6 @@ var RR_speaker = function (target, context) {
         );
       });
     });
-    console.log(utility);
     // putting more weight on partner's perspective is costly
     factor(utility - ownWeighting * params.perspectiveCost);
     return {
@@ -374,62 +269,30 @@ var runL0Test = function(name, utterance, context, weighting, expectedTarget, ex
 console.log("\nL0 Tests:");
 console.log(context);
 
-// Test 1: Basic egocentric interpretation (weighting = 0)
-runL0Test(
-  "1. Basic egocentric interpretation",
-  "green",
-  context,
-  0,
-  context.target,
-  0.2  // Updated probability based on actual context size
-);
+runL0Test("1. Basic egocentric interpretation", "green", context, 0, context.target, 0.2);
+runL0Test("2. Basic partner perspective interpretation", "green", context, 1, context.target, 0.25);
+runL0Test("3. Mixed perspective interpretation", "green", context, 0.5, context.target, 0.225);
+runL0Test("4. Specific utterance with multiple properties", "two small green square", context, 0, context.target, 0.333);
+runL0Test("5. 'only' utterance interpretation", "square only", context, 0, context.target, 0.96);
+runL0Test("6. Non-matching utterance", "blue", context, 0, context.target, 0.0);
 
-// Test 2: Basic partner perspective interpretation (weighting = 1)
-runL0Test(
-  "2. Basic partner perspective interpretation",
-  "green",
-  context,
-  1,
-  context.target,
-  0.25  // Updated probability based on actual context size
-);
+// Helper function to run S1 tests
+var runS1Test = function(name, target, context, weighting, expectedUtterance, expectedProbability) {
+  var result = S1(target, context, weighting);
+  var utteranceProbability = Math.exp(result.score(expectedUtterance));
+  var passed = Math.abs(utteranceProbability - expectedProbability) < 0.01;
+  var status = passed ? "✓ PASS" : "✗ FAIL";
+  console.log(name + ": " + status + 
+    " (got " + utteranceProbability.toFixed(3) + 
+    ", expected " + expectedProbability.toFixed(3) + ")");
+};
 
-// Test 3: Mixed perspective (weighting = 0.5)
-runL0Test(
-  "3. Mixed perspective interpretation",
-  "green",
-  context,
-  0.5,
-  context.target,
-  0.225 // Updated probability based on actual context size
-);
+// S1 Tests
+console.log("\nS1 Tests:");
 
-// Test 4: Specific utterance with multiple properties
-runL0Test(
-  "4. Specific utterance with multiple properties",
-  "two small green square",
-  context,
-  0,
-  context.target,
-  0.333
-);
+runS1Test("1. Basic egocentric speaker", context.target, context, 0, "green square", 0.27);
+runS1Test("2. Basic partner perspective speaker", context.target, context, 1, "green square", 0.238);
+runS1Test("3. Mixed perspective speaker", context.target, context, 0.5, "green square", 0.259);
 
-// Test 5: 'only' utterance
-runL0Test(
-  "5. 'only' utterance interpretation",
-  "square only",
-  context,
-  0,
-  context.target,
-  0.96  // Updated probability based on actual context size
-);
-
-// Test 6: Non-matching utterance
-runL0Test(
-  "6. Non-matching utterance",
-  "blue",
-  context,
-  0,
-  context.target,
-  0.0
-);
+console.log(JSON.stringify(S1(["two small green square"], context, 0)))
+console.log(JSON.stringify(S1(["two small green square"], context, 1)))
