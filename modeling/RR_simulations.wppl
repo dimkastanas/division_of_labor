@@ -45,6 +45,9 @@ var possibleUtterances = Categorical({
     "square only",
     "circle only",
     "two small green square only",
+    "green square only",
+    "small green square only",
+    "small green only"    
   ],
 });
 
@@ -151,13 +154,11 @@ var S1 = cache(function (target, context, ownWeighting) {
 var L1 = function (utt, context, ownWeighting) {
   return Infer({ method: "enumerate" }, function () {
     var perspective = flip(ownWeighting) ? "other" : "own";
-    var partnerContext =
-      perspective == "own" ? context : getSpeakerView(context);
+    var partnerContext = perspective == "own" ? context : getSpeakerView(context);
     var partnerWeight = perspective == "own" ? 0 : sample(possibleWeightings);
-
-    var object = uniformDraw(partnerContext);
-    observe(S1(object, partnerContext, partnerWeight), utt);
-    return object;
+    var scene = uniformDraw(_.values(partnerContext));
+    observe(S1(scene, partnerContext, partnerWeight), utt);
+    return scene;
   });
 };
 
@@ -169,23 +170,22 @@ var RR_speaker = function (target, context) {
 
     // Imagine how speaker with this weight would behave
     var likelyUtt = MAP(S1(target, context, ownWeighting))["val"];
+
     // Imagine expected utility of that behavior, marginalizing over
     // partner's mixture weight and possible objects in partner's view
-    var utility = expectation(possibleScenes, function (obj) {
+    var utility = expectation(possibleScenes, function (scene) {
       return expectation(possibleWeightings, function (partnerWeighting) {
-        var possibleListenerView = context.concat(obj + " private");
-        return L0(likelyUtt, possibleListenerView, partnerWeighting).score(
-          target
-        );
+        var possibleListenerView = extend(context, {'private' : scene});
+        return L0(likelyUtt, possibleListenerView, partnerWeighting).score(target);
       });
     });
+
     // putting more weight on partner's perspective is costly
     factor(utility - ownWeighting * params.perspectiveCost);
     return {
       weighting: ownWeighting,
       perspectiveCost: params.perspectiveCost,
-      alpha: params.alpha,
-      //uttCost: argv.uttCost,
+      alpha: params.alpha
     };
   });
 };
@@ -290,9 +290,30 @@ var runS1Test = function(name, target, context, weighting, expectedUtterance, ex
 // S1 Tests
 console.log("\nS1 Tests:");
 
-runS1Test("1. Basic egocentric speaker", context.target, context, 0, "green square", 0.27);
-runS1Test("2. Basic partner perspective speaker", context.target, context, 1, "green square", 0.238);
-runS1Test("3. Mixed perspective speaker", context.target, context, 0.5, "green square", 0.259);
+runS1Test("1. Basic egocentric speaker", context.target, context, 0, "green square", 0.238);
+runS1Test("2. Basic partner perspective speaker", context.target, context, 1, "green square", 0.131);
+runS1Test("3. Mixed perspective speaker", context.target, context, 0.5, "green square", 0.193);
 
-console.log(JSON.stringify(S1(["two small green square"], context, 0)))
-console.log(JSON.stringify(S1(["two small green square"], context, 1)))
+runS1Test("4. Basic egocentric speaker", context.target, context, 0, "green square only", 0.088);
+runS1Test("5. Basic partner perspective speaker", context.target, context, 1, "green square only", 0.325);
+runS1Test("6. Mixed perspective speaker", context.target, context, 0.5, "green square only", 0.184);
+
+var runL1Test = function(name, utterance, context, weighting, expectedTarget, expectedProbability) {
+  var result = L1(utterance, context, weighting);
+  var targetProbability = Math.exp(result.score(expectedTarget));
+  var passed = Math.abs(targetProbability - expectedProbability) < 0.01;
+  var status = passed ? "✓ PASS" : "✗ FAIL";
+  console.log(name + ": " + status + 
+    " (got " + targetProbability.toFixed(3) + 
+    ", expected " + expectedProbability.toFixed(3) + ")");
+};
+
+// S1 Tests
+console.log("\nL1 Tests:");
+
+runL1Test("1. Basic egocentric interpretation", "green", context, 0, context.target, 0.130);
+runL1Test("2. Basic partner perspective interpretation", "green", context, 1, context.target, 0.146);
+runL1Test("3. Mixed perspective interpretation", "green", context, 0.5, context.target, 0.139);
+runL1Test("4. Specific utterance with multiple properties", "two small green square", context, 0, context.target, 1.0);
+
+JSON.stringify(RR_speaker(context.target, context))
