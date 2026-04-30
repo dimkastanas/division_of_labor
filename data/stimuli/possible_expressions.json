@@ -1,0 +1,338 @@
+[
+  {
+    "id": 1,
+    "target": ["two big blue square", "one small black star"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big blue",
+      "two big blue square",
+      "two big blue square and one",
+      "two big blue square and one small",
+      "two big blue square and one small black",
+      "two big blue square and one small black star"
+    ]
+  },
+  {
+    "id": 2,
+    "target": ["two big green triangle", "one small blue pentagon"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big green",
+      "two big green triangle",
+      "two big green triangle and one",
+      "two big green triangle and one small",
+      "two big green triangle and one small blue",
+      "two big green triangle and one small blue pentagon"
+    ]
+  },
+  {
+    "id": 3,
+    "target": ["two big pink star", "one small green triangle"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big pink",
+      "two big pink star",
+      "two big pink star and one",
+      "two big pink star and one small",
+      "two big pink star and one small green",
+      "two big pink star and one small green triangle"
+    ]
+  },
+  {
+    "id": 4,
+    "target": ["two big pink circle", "one small black star"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big pink",
+      "two big pink circle",
+      "two big pink circle and one",
+      "two big pink circle and one small",
+      "two big pink circle and one small black",
+      "two big pink circle and one small black star"
+    ]
+  },
+  {
+    "id": 5,
+    "target": ["two small black circle", "one big green square"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small black",
+      "two small black circle",
+      "two small black circle and one",
+      "two small black circle and one big",
+      "two small black circle and one big green",
+      "two small black circle and one big green square"
+    ]
+  },
+  {
+    "id": 6,
+    "target": ["two small black circle", "one big green triangle"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small black",
+      "two small black circle",
+      "two small black circle and one",
+      "two small black circle and one big",
+      "two small black circle and one big green",
+      "two small black circle and one big green triangle"
+    ]
+  },
+  {
+    "id": 7,
+    "target": ["two small black square", "one big green pentagon"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small black",
+      "two small black square",
+      "two small black square and one",
+      "two small black square and one big",
+      "two small black square and one big green",
+      "two small black square and one big green pentagon"
+    ]
+  },
+  {
+    "id": 8,
+    "target": ["two small green star", "one big pink square"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small green",
+      "two small green star",
+      "two small green star and one",
+      "two small green star and one big",
+      "two small green star and one big pink",
+      "two small green star and one big pink square"
+    ]
+  },
+  {
+    "id": 9,
+    "target": ["two big pink pentagon", "one small blue triangle"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big pink",
+      "two big pink pentagon",
+      "two big pink pentagon and one",
+      "two big pink pentagon and one small",
+      "two big pink pentagon and one small blue",
+      "two big pink pentagon and one small blue triangle"
+    ]
+  },
+  {
+    "id": 10,
+    "target": ["two big green square", "one small black star"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big green",
+      "two big green square",
+      "two big green square and one",
+      "two big green square and one small",
+      "two big green square and one small black",
+      "two big green square and one small black star"
+    ]
+  },
+  {
+    "id": 11,
+    "target": ["two big pink circle", "one small blue triangle"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big pink",
+      "two big pink circle",
+      "two big pink circle and one",
+      "two big pink circle and one small",
+      "two big pink circle and one small blue",
+      "two big pink circle and one small blue triangle"
+    ]
+  },
+  {
+    "id": 12,
+    "target": ["two big black triangle", "one small blue star"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big black",
+      "two big black triangle",
+      "two big black triangle and one",
+      "two big black triangle and one small",
+      "two big black triangle and one small blue",
+      "two big black triangle and one small blue star"
+    ]
+  },
+  {
+    "id": 13,
+    "target": ["two small green circle", "one big blue pentagon"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small green",
+      "two small green circle",
+      "two small green circle and one",
+      "two small green circle and one big",
+      "two small green circle and one big blue",
+      "two small green circle and one big blue pentagon"
+    ]
+  },
+  {
+    "id": 14,
+    "target": ["two small black star", "one big blue circle"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small black",
+      "two small black star",
+      "two small black star and one",
+      "two small black star and one big",
+      "two small black star and one big blue",
+      "two small black star and one big blue circle"
+    ]
+  },
+  {
+    "id": 15,
+    "target": ["two small green pentagon", "one big black square"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small green",
+      "two small green pentagon",
+      "two small green pentagon and one",
+      "two small green pentagon and one big",
+      "two small green pentagon and one big black",
+      "two small green pentagon and one big black square"
+    ]
+  },
+  {
+    "id": 16,
+    "target": ["two small blue square", "one big green triangle"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small blue",
+      "two small blue square",
+      "two small blue square and one",
+      "two small blue square and one big",
+      "two small blue square and one big green",
+      "two small blue square and one big green triangle"
+    ]
+  },
+  {
+    "id": 17,
+    "target": ["two big green star", "one small pink circle"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big green",
+      "two big green star",
+      "two big green star and one",
+      "two big green star and one small",
+      "two big green star and one small pink",
+      "two big green star and one small pink circle"
+    ]
+  },
+  {
+    "id": 18,
+    "target": ["two big black pentagon", "one small pink square"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big black",
+      "two big black pentagon",
+      "two big black pentagon and one",
+      "two big black pentagon and one small",
+      "two big black pentagon and one small pink",
+      "two big black pentagon and one small pink square"
+    ]
+  },
+  {
+    "id": 19,
+    "target": ["two big blue triangle", "one small black circle"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big blue",
+      "two big blue triangle",
+      "two big blue triangle and one",
+      "two big blue triangle and one small",
+      "two big blue triangle and one small black",
+      "two big blue triangle and one small black circle"
+    ]
+  },
+  {
+    "id": 20,
+    "target": ["two big blue star", "one small black pentagon"],
+    "expressions": [
+      "two",
+      "two big",
+      "two big blue",
+      "two big blue star",
+      "two big blue star and one",
+      "two big blue star and one small",
+      "two big blue star and one small black",
+      "two big blue star and one small black pentagon"
+    ]
+  },
+  {
+    "id": 21,
+    "target": ["two small pink triangle", "one big black square"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small pink",
+      "two small pink triangle",
+      "two small pink triangle and one",
+      "two small pink triangle and one big",
+      "two small pink triangle and one big black",
+      "two small pink triangle and one big black square"
+    ]
+  },
+  {
+    "id": 22,
+    "target": ["two small green triangle", "one big pink star"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small green",
+      "two small green triangle",
+      "two small green triangle and one",
+      "two small green triangle and one big",
+      "two small green triangle and one big pink",
+      "two small green triangle and one big pink star"
+    ]
+  },
+  {
+    "id": 23,
+    "target": ["two small green square", "one big pink star"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small green",
+      "two small green square",
+      "two small green square and one",
+      "two small green square and one big",
+      "two small green square and one big pink",
+      "two small green square and one big pink star"
+    ]
+  },
+  {
+    "id": 24,
+    "target": ["two small black pentagon", "one big pink circle"],
+    "expressions": [
+      "two",
+      "two small",
+      "two small black",
+      "two small black pentagon",
+      "two small black pentagon and one",
+      "two small black pentagon and one big",
+      "two small black pentagon and one big pink",
+      "two small black pentagon and one big pink circle"
+    ]
+  }
+]

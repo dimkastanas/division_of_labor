@@ -1,0 +1,146 @@
+[
+  {
+    "id": 1,
+    "target": ["two big blue square", "one small black star"],
+    "set_a_type": ["two big blue triangle", "one small black star"],
+    "set_a_non_type": ["two big green square", "one small black star"]
+  },
+  {
+    "id": 2,
+    "target": ["two big green triangle", "one small blue pentagon"],
+    "set_a_non_type": ["two small green triangle", "one small blue pentagon"],
+    "set_a_type": ["two big green circle", "one small blue pentagon"]
+  },
+  {
+    "id": 3,
+    "target": ["two big pink star", "one small green triangle"],
+    "set_a_type": ["two big pink circle", "one small green triangle"],
+    "set_a_non_type": ["two small pink star", "one small green triangle"]
+  },
+  {
+    "id": 4,
+    "target": ["two big pink circle", "one small black star"],
+    "set_a_non_type": ["two small pink circle", "one small black star"],
+    "set_a_type": ["two big pink pentagon", "one small black star"]
+  },
+  {
+    "id": 5,
+    "target": ["two small black circle", "one big green square"],
+    "set_a_type": ["two small black star", "one big green square"],
+    "set_a_non_type": ["two small green circle", "one big green square"]
+  },
+  {
+    "id": 6,
+    "target": ["two small black circle", "one big green triangle"],
+    "set_a_non_type": ["two small blue circle", "one big green triangle"],
+    "set_a_type": ["two small black pentagon", "one big green triangle"]
+  },
+  {
+    "id": 7,
+    "target": ["two small black square", "one big green pentagon"],
+    "set_a_type": ["two small black star", "one big green pentagon"],
+    "set_a_non_type": ["two small green square", "one big green pentagon"]
+  },
+  {
+    "id": 8,
+    "target": ["two small green star", "one big pink square"],
+    "set_a_non_type": ["two big green star", "one big pink square"],
+    "set_a_type": ["two small green circle", "one big pink square"]
+  },
+  {
+    "id": 9,
+    "target": ["two big pink pentagon", "one small blue triangle"],
+    "set_a_type": ["two big pink square", "one small blue triangle"],
+    "set_a_non_type": ["two small pink pentagon", "one small blue triangle"]
+  },
+  {
+    "id": 10,
+    "target": ["two big green square", "one small black star"],
+    "set_a_non_type": ["two small green square", "one small black star"],
+    "set_a_type": ["two big green pentagon", "one small black star"]
+  },
+  {
+    "id": 11,
+    "target": ["two big pink circle", "one small blue triangle"],
+    "set_a_type": ["two big pink square", "one small blue triangle"],
+    "set_a_non_type": ["two big black circle", "one small blue triangle"]
+  },
+  {
+    "id": 12,
+    "target": ["two big black triangle", "one small blue star"],
+    "set_a_non_type": ["two big pink triangle", "one small blue star"],
+    "set_a_type": ["two big black square", "one small blue star"]
+  },
+  {
+    "id": 13,
+    "target": ["two small green circle", "one big blue pentagon"],
+    "set_a_type": ["two small green triangle", "one big blue pentagon"],
+    "set_a_non_type": ["two small black circle", "one big blue pentagon"]
+  },
+  {
+    "id": 14,
+    "target": ["two small black star", "one big blue circle"],
+    "set_a_non_type": ["two small pink star", "one big blue circle"],
+    "set_a_type": ["two small black square", "one big blue circle"]
+  },
+  {
+    "id": 15,
+    "target": ["two small green pentagon", "one big black square"],
+    "set_a_type": ["two small green triangle", "one big black square"],
+    "set_a_non_type": ["two small black pentagon", "one big black square"]
+  },
+  {
+    "id": 16,
+    "target": ["two small blue square", "one big green triangle"],
+    "set_a_non_type": ["two small black square", "one big green triangle"],
+    "set_a_type": ["two small blue pentagon", "one big green triangle"]
+  },
+  {
+    "id": 17,
+    "target": ["two big green star", "one small pink circle"],
+    "set_a_type": ["two big green triangle", "one small pink circle"],
+    "set_a_non_type": ["two big blue star", "one small pink circle"]
+  },
+  {
+    "id": 18,
+    "target": ["two big black pentagon", "one small pink square"],
+    "set_a_non_type": ["two small black pentagon", "one small pink square"],
+    "set_a_type": ["two big black star", "one small pink square"]
+  },
+  {
+    "id": 19,
+    "target": ["two big blue triangle", "one small black circle"],
+    "set_a_type": ["two big blue star", "one small black circle"],
+    "set_a_non_type": ["two small blue triangle", "one small black circle"]
+  },
+  {
+    "id": 20,
+    "target": ["two big blue star", "one small black pentagon"],
+    "set_a_non_type": ["two small blue star", "one small black pentagon"],
+    "set_a_type": ["two big blue triangle", "one small black pentagon"]
+  },
+  {
+    "id": 21,
+    "target": ["two small pink triangle", "one big black square"],
+    "set_a_type": ["two small pink circle", "one big black square"],
+    "set_a_non_type": ["two small blue triangle", "one big black square"]
+  },
+  {
+    "id": 22,
+    "target": ["two small green triangle", "one big pink star"],
+    "set_a_non_type": ["two small blue triangle", "one big pink star"],
+    "set_a_type": ["two small green pentagon", "one big pink star"]
+  },
+  {
+    "id": 23,
+    "target": ["two small green square", "one big pink star"],
+    "set_a_type": ["two small green pentagon", "one big pink star"],
+    "set_a_non_type": ["two small blue square", "one big pink star"]
+  },
+  {
+    "id": 24,
+    "target": ["two small black pentagon", "one big pink circle"],
+    "set_a_non_type": ["two big black pentagon", "one big pink circle"],
+    "set_a_type": ["two small black triangle", "one big pink circle"]
+  }
+]
