@@ -1,0 +1,342 @@
+---
+title: "A precision-weighted RSA model of referential over-specification in autism"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    code-tools: true
+    embed-resources: true
+jupyter: python3
+---
+
+## The model
+
+A speaker describes a **target card** holding two objects: a **pair** of two
+identical objects (set A) and a **singleton** (set B). A competitor card differs
+from the target on exactly one *pair* feature `d*` (shape in **type** trials;
+colour or size in **non-type** trials). Set B is shared with the competitor, so
+it is always redundant. An **occlusion** (present/absent) signals a card visible
+to the listener but not the speaker.
+
+Production is a softmax over **object-structured** utterances: per object, omit
+it or refer to it = produce its head noun (shape) plus any subset of modifiers
+{colour, size, number}; a modifier requires its object's head (→ 81 legal
+utterances). All features are chosen jointly — this is a constraint on legal
+feature sets, not serial production.
+
+The speaker is a **bottom-up salience prior** weighted by **top-down
+informativity and brevity**:
+
+$$
+P(u) \;\propto\; \underbrace{\prod_{f\in u}\sigma_f \prod_{f\notin u}(1-\sigma_f)}_{P_{\text{Sal}}(u)}
+\;\cdot\; \underbrace{L_0(\text{target}\mid u)^{\lambda}}_{\text{informativity}}
+\;\cdot\; \underbrace{e^{-\beta|u|}}_{\text{brevity}}
+$$
+
+$P_{\text{Sal}}$ is an explicit per-feature salience prior: each feature comes to
+mind independently with probability $\sigma_f$. The informativity term uses the
+perspective mix $L_0=\exp I_{\text{mix}}$, $I_{\text{mix}} = w_S\,\text{occ}\cdot U^{\text{asym}} + (1-w_S\,\text{occ})\,U^{\text{ego}}$
+(Hawkins, Gweon & Goodman 2021): $U^{\text{ego}}=\log L_0$ vs the visible
+competitor, $U^{\text{asym}}$ marginalises a hidden card over all features
+(occlusion). This is the van Tiel et al. (2026) form $P\propto P_{\text{Sal}}\cdot L_0^{\lambda}$
+with an added brevity factor and object structure.
+
+| param | role | varies by |
+|---|---|---|
+| $\sigma_f$ | bottom-up **salience prior** (P feature comes to mind): shape, colour, size, plural, singular | shared (object-feature level) |
+| $\lambda$ | top-down **informativity** (avoid under-specification) | shared |
+| $w_S$ | perspective-taking / occlusion sensitivity | shared |
+| $\beta$ | top-down **brevity/cost** (avoid over-specification) | **group × experiment** ← the autism effect |
+
+`number` is **cardinality-markedness**: high salience $\sigma_{\text{plural}}$ for
+the pair ("two"), low $\sigma_{\text{singular}}$ for the singleton ("a"). The
+autism effect is a **global shift in $\beta$**, not a feature-specific salience
+re-weighting (ruled out below). Code: `model.py`, `data.py`.
+
+## Setup
+
+```{python}
+import numpy as np
+import jax
+import jax.numpy as jnp
+from scipy.optimize import minimize
+
+import data
+import model
+
+jax.config.update("jax_enable_x64", True)
+
+CELLS = {("accuracy", "ASD"): 0, ("accuracy", "NT"): 1,
+         ("minimal", "ASD"): 2, ("minimal", "NT"): 3}
+LABELS = ["acc_ASD", "acc_NT", "min_ASD", "min_NT"]
+
+
+def trial_arrays(trials):
+    cell, occ, dv, uidx, expi, grp, srs, pid = ([] for _ in range(8))
+    for t in trials:
+        if not t["included"] or (t["experiment"], t["group"]) not in CELLS:
+            continue
+        try:
+            s = float(t["srs"])
+        except (TypeError, ValueError):
+            continue
+        cell.append(CELLS[(t["experiment"], t["group"])])
+        expi.append(0 if t["experiment"] == "accuracy" else 1)
+        grp.append(t["group"])
+        srs.append(s)
+        pid.append(t["pid"])
+        occ.append(1 if t["occlusion"] == "yes" else 0)
+        dv.append(model.distvec(t["dist_dims"]))
+        uidx.append(model.code_to_uidx(t["setA"], t["setB"]))
+    srs = np.array(srs)
+    z = (srs - srs.mean()) / srs.std()
+    return dict(cell=jnp.array(cell), occ=jnp.array(occ), dv=jnp.array(dv),
+                uidx=jnp.array(uidx), expi=jnp.array(expi), grp=np.array(grp),
+                z=jnp.array(z), pid=np.array(pid),
+                srs_mu=srs.mean(), srs_sd=srs.std())
+
+
+A = trial_arrays(data.load_all())
+print(f"{model.NU} legal utterances; {A['cell'].shape[0]} trials")
+```
+
+## 1. Recovery gate
+
+Can the design recover a known effect? Simulate from known parameters and refit,
+with a real effect and a null.
+
+```{python}
+_, eff = model.recovery(A["cell"], A["occ"], A["dv"], 4, [0.0, 0.9, 1.8, 1.9], LABELS)
+_, nul = model.recovery(A["cell"], A["occ"], A["dv"], 4,
+                        [0.5, 0.5, 1.85, 1.85], LABELS, seed=1)
+
+
+def gap(d, a, b):
+    return d[a][1] - d[b][1]
+
+
+print(f"effect: acc gap {gap(eff, 'acc_ASD', 'acc_NT'):+.2f} (true -0.90), "
+      f"min gap {gap(eff, 'min_ASD', 'min_NT'):+.2f} (true -0.10)")
+print(f"null  : acc gap {gap(nul, 'acc_ASD', 'acc_NT'):+.2f} (true 0), "
+      f"min gap {gap(nul, 'min_ASD', 'min_NT'):+.2f} (true 0)")
+```
+
+## 2. Fit and the autism effect
+
+```{python}
+fit = model.fit(A["cell"], A["occ"], A["dv"], A["uidx"], 4)
+print("salience prior sigma [shape, colour, size, plural, singular] =",
+      ", ".join(f"{x:.2f}" for x in fit["sigma"]))
+print(f"lambda = {fit['lam']:.2f}   w_S = {fit['w_S']:.2f}   AIC = {fit['aic']:.1f}")
+for lab, b in zip(LABELS, fit["beta"]):
+    print(f"  beta[{lab}] = {b:+.2f}")
+print(f"\nGROUP CONTRAST (beta_ASD - beta_NT):  "
+      f"accuracy {fit['beta'][0] - fit['beta'][1]:+.2f}   "
+      f"minimal {fit['beta'][2] - fit['beta'][3]:+.2f}")
+```
+
+Autistic speakers carry a **lower brevity weight** (more over-specification),
+concentrated in the unrestricted *accuracy* experiment and near zero under the
+*minimal* brevity instruction. Shape salience is *low* yet shape is produced
+~always — because it is the head noun (carried by reference + nesting, not
+salience). Model vs. data (set-A mention rate, accuracy, occlusion-absent):
+
+```{python}
+emp = data.empirical_rates(data.load_all(), "accuracy")
+
+
+def predrate(group, dist, dim, occ=0.0):
+    dv = jnp.array(model.distvec(["shape"] if dist == "type" else ["colour"]))
+    p = model.mention_prob(jnp.array(fit["s5"]), fit["lam"], fit["w_S"],
+                           fit["beta"][CELLS[("accuracy", group)]], dv, occ)
+    return float(p[model.FEAT[("A", dim)]])
+
+
+print(f"{'dist':9s}{'feat':8s}{'ASD model/data':>18s}{'NT model/data':>18s}")
+for dist in ("type", "non_type"):
+    for dim in ("number", "size", "colour", "shape"):
+        ea = emp[("no", dist, "ASD", dim)]
+        en = emp[("no", dist, "NT", dim)]
+        print(f"{dist:9s}{dim:8s}"
+              f"{predrate('ASD', dist, dim):>9.2f}/{ea:.2f}"
+              f"{predrate('NT', dist, dim):>13.2f}/{en:.2f}")
+```
+
+## 3. Why this model (comparison)
+
+Two alternatives, fit to the same data. **(a) Soft-semantics** (Degen et al.
+2020 style): over-specification is driven by graded semantic fidelity instead of
+salience (no salience prior). **(b) Salience-weight**: the group effect is a
+multiplier $\gamma$ on salience (autistic over-weight salient features) rather
+than a cost shift.
+
+```{python}
+M_, NC, SM = model.MENTION, model.NCOST, model.SAL_MAP
+
+
+def mle(nll_fn, x0, *args):
+    vg = jax.jit(jax.value_and_grad(nll_fn))
+
+    def f(x):
+        v, g = vg(jnp.array(x), *args)
+        return float(v), np.asarray(g)
+
+    return minimize(f, x0, jac=True, method="L-BFGS-B")
+
+
+# (a) soft-semantics: per-feature log-odds fidelity, NO salience prior
+FID = jnp.array([0, 1, 2, 3, 0, 1, 2, 3])
+
+
+def spk_soft(x4, lam, w_S, beta, occ, dv):
+    x8 = x4[FID]
+    z = M_ @ (dv * x8)
+    U_ego = -jax.nn.softplus(-z)
+    r = jnp.where(M_ > 0, jnp.exp(-x8)[None, :], 1.0)
+    U_asym = jnp.mean(-jnp.log(1 + jnp.exp(-z)[:, None] + r), axis=1)
+    val = (w_S * occ) * U_asym + (1 - w_S * occ) * U_ego
+    return jax.nn.softmax(lam * val - beta * NC)
+
+
+def nll_soft(th, cell, occ, dv, ui):
+    x4 = th[:4]
+    lam = jax.nn.softplus(th[4])
+    w_S = jax.nn.sigmoid(th[5])
+    beta = th[6:10]
+    P = jax.vmap(spk_soft, (None, None, None, 0, 0, 0))(
+        x4, lam, w_S, beta[cell], occ.astype(jnp.float64), dv)
+    return -jnp.sum(jnp.log(P[jnp.arange(P.shape[0]), ui] + 1e-12))
+
+
+r_soft = mle(nll_soft, np.r_[np.zeros(4), 2.0, 0.0, np.zeros(4)],
+             A["cell"], A["occ"], A["dv"], A["uidx"])
+aic_soft = 2 * (4 + 2 + 4) + 2 * r_soft.fun
+
+print(f"object-salience (this model):  AIC {fit['aic']:.0f}")
+print(f"soft-semantics (Degen-style):  AIC {aic_soft:.0f}   "
+      f"dAIC {aic_soft - fit['aic']:+.0f}")
+```
+
+```{python}
+# (b) salience-weight: beta per experiment, gamma multiplier on salience per group
+def spk_g(s8, lam, w_S, beta, gam, occ, dv):
+    comp = (M_ @ dv == 0).astype(jnp.float64)
+    U_ego = -jnp.log(1 + comp)
+    U_asym = jnp.mean(-jnp.log(1 + comp[:, None] + (1 - M_)), axis=1)
+    val = (w_S * occ) * U_asym + (1 - w_S * occ) * U_ego
+    return jax.nn.softmax(lam * val + gam * (M_ @ s8) - beta * NC)
+
+
+def nll_g(th, expi, grp, occ, dv, ui):
+    s8 = (th[:5] - jnp.mean(th[:5]))[SM]
+    lam = jax.nn.softplus(th[5])
+    w_S = jax.nn.sigmoid(th[6])
+    beta = th[7:9]
+    gam = jnp.array([jnp.exp(th[9]), 1.0])
+    P = jax.vmap(spk_g, (None, None, None, 0, 0, 0, 0))(
+        s8, lam, w_S, beta[expi], gam[grp], occ.astype(jnp.float64), dv)
+    return -jnp.sum(jnp.log(P[jnp.arange(P.shape[0]), ui] + 1e-12))
+
+
+gi = jnp.array([0 if g == "ASD" else 1 for g in A["grp"]])
+r_g = mle(nll_g, np.r_[np.zeros(5), 2.0, 0.0, 0.0, 0.0, 0.0],
+          A["expi"], gi, A["occ"], A["dv"], A["uidx"])
+aic_g = 2 * (4 + 2 + 2 + 1) + 2 * r_g.fun
+
+print(f"salience-weight (gamma):       AIC {aic_g:.0f}   "
+      f"dAIC {aic_g - fit['aic']:+.0f}")
+```
+
+Positive ΔAIC favours the object-salience model in both comparisons. The
+salience-weight model fails for an instructive reason: a γ multiplier boosts
+colour (high salience) more than size, yet autistic speakers over-produce
+redundant size about as much as colour — so the effect is a global cost shift,
+not a salience re-weighting.
+
+## 4. Dimensional analysis: $\beta$ as a function of SRS
+
+Replace the group dummy with a continuous dependence on the SRS (autistic-trait
+score): $\beta = \beta_0[\text{exp}] + \beta_{\text{srs}}[\text{exp}]\cdot z_{\text{SRS}}$.
+Uncertainty from a **participant bootstrap** (stratified by experiment × group;
+no NumPyro).
+
+```{python}
+def unpack_srs(th):
+    s5 = th[:5] - jnp.mean(th[:5])
+    lam = jax.nn.softplus(th[5])
+    w_S = jax.nn.sigmoid(th[6])
+    return s5, lam, w_S, th[7:9], th[9:11]
+
+
+def nll_srs(th, expi, z, occ, dv, ui):
+    s5, lam, w_S, b0, b_srs = unpack_srs(th)
+    beta = b0[expi] + b_srs[expi] * z
+    P = model.spk(s5, lam, w_S, beta, occ.astype(jnp.float64), dv)
+    return -jnp.sum(jnp.log(P[jnp.arange(P.shape[0]), ui] + 1e-12))
+
+
+vgs = jax.jit(jax.value_and_grad(nll_srs))
+
+
+def fit_srs(sub, th0):
+    def f(x):
+        v, g = vgs(jnp.array(x), sub["expi"], sub["z"], sub["occ"],
+                   sub["dv"], sub["uidx"])
+        return float(v), np.asarray(g)
+
+    return minimize(f, th0, jac=True, method="L-BFGS-B").x
+
+
+th0 = np.r_[np.zeros(5), 2.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+full = fit_srs(A, th0)
+b_srs = np.asarray(unpack_srs(jnp.array(full))[4])
+zmean = {g: float(np.mean(np.asarray(A["z"])[A["grp"] == g])) for g in ("ASD", "NT")}
+
+# participant bootstrap (stratified by experiment x group)
+rng = np.random.default_rng(0)
+NBOOT = 300
+by_cell = {}
+for i in range(A["cell"].shape[0]):
+    key = (int(A["expi"][i]), A["grp"][i])
+    by_cell.setdefault(key, {}).setdefault(A["pid"][i], []).append(i)
+
+boots = []
+for _ in range(NBOOT):
+    idx = []
+    for cell_pids in by_cell.values():
+        keys = list(cell_pids)
+        for j in rng.choice(len(keys), size=len(keys), replace=True):
+            idx.extend(cell_pids[keys[j]])
+    sub = {k: A[k][jnp.array(idx)] for k in ("expi", "z", "occ", "dv", "uidx")}
+    boots.append(np.asarray(unpack_srs(jnp.array(fit_srs(sub, full)))[4]))
+boots = np.array(boots)
+
+print(f"SRS: mean {A['srs_mu']:.1f}, sd {A['srs_sd']:.1f}; "
+      f"z_ASD = {zmean['ASD']:+.2f}, z_NT = {zmean['NT']:+.2f}\n")
+for j, name in enumerate(("accuracy", "minimal")):
+    lo, hi = np.percentile(boots[:, j], [2.5, 97.5])
+    sig = "***" if (lo < 0) == (hi < 0) else "n.s."
+    print(f"beta_srs[{name:9s}] = {b_srs[j]:+.3f}  "
+          f"95% CI [{lo:+.3f}, {hi:+.3f}]  {sig}")
+lo, hi = np.percentile(boots[:, 0] - boots[:, 1], [2.5, 97.5])
+sig = "***" if (lo < 0) == (hi < 0) else "n.s."
+print(f"\ntrait x instruction interaction (acc - min slope): "
+      f"{b_srs[0] - b_srs[1]:+.3f}  95% CI [{lo:+.3f}, {hi:+.3f}]  {sig}")
+```
+
+Higher autistic traits predict more over-specification (lower brevity weight)
+under free production, an effect that is significantly attenuated by the brevity
+instruction — flexible weighting, not a fixed deficit.
+
+## Notes & caveats
+
+- Colour and size are both the salient attributes and the modifiers here, so
+  "perceptual salience" and "adjective production" can't be separated in this
+  design; a value-markedness manipulation (vivid vs typical colour) would.
+- The global-$\beta$ model still under-predicts the redundant-*size* gap
+  (data ≈ 0.38 vs model ≈ 0.18): autistic size over-production exceeds a uniform
+  shift.
+- $\beta$ is a cost weight; the "precision" here is a computational-level
+  bottom-up/top-down balance, not an inverse-variance sensory precision.
+- AIC treats trials as independent though they are nested in participants; the
+  participant bootstrap is the clustering-aware inference.
