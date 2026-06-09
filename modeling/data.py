@@ -13,9 +13,11 @@ The coded feature-mention vector is the model's dependent variable.
 import csv
 import re
 import os
+import json
 from collections import defaultdict
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "raw")
+STIMULI = os.path.join(os.path.dirname(__file__), "..", "data", "stimuli", "world_states.json")
 FILES = {
     ("accuracy", "ASD"): "accuracy_ASD.csv",
     ("accuracy", "NT"):  "accuracy_NT.csv",
@@ -69,21 +71,33 @@ def code_expression(expr, set_a, set_b):
     return setA, setB
 
 
-def _dist_dims(unique_property, dist_feature):
-    """Which dimension(s) distinguish the target from the competitor."""
-    if dist_feature == "type":
-        return ["shape"]
-    dims = []
-    for tok in _toks(unique_property):
-        if tok in SIZE:
-            dims.append("size")
-        elif tok in COLOR:
-            dims.append("colour")
-        elif tok in NUM:
-            dims.append("number")
-        elif tok in SHAPE:
-            dims.append("shape")
-    return sorted(set(dims)) or ["colour"]
+def _obj_tuple(s):
+    """'two, big, blue, square' or 'two big blue square' -> (number, size, colour, shape)."""
+    return tuple(x.strip() for x in s.replace(",", " ").split())
+
+
+def _diff_dims(target, distractor):
+    t, d = _obj_tuple(target), _obj_tuple(distractor)
+    return [DIMS[i] for i in range(4) if t[i] != d[i]]
+
+
+def _load_contrasts():
+    """target (pair, singleton) -> contrastive dim(s) per dist_feature, from the
+    world_states geometry (not unique_property, which over-states it)."""
+    lut = {}
+    for w in json.load(open(STIMULI)):
+        key = (_obj_tuple(w["target"][0]), _obj_tuple(w["target"][1]))
+        lut[key] = {"type": _diff_dims(w["target"][0], w["set_a_type"][0]),
+                    "non_type": _diff_dims(w["target"][0], w["set_a_non_type"][0])}
+    return lut
+
+
+_CONTRASTS = _load_contrasts()
+
+
+def _dist_dims(set_a, set_b, dist_feature):
+    """Distinguishing dimension(s) for the trial, from world_states.json."""
+    return _CONTRASTS[(_obj_tuple(set_a), _obj_tuple(set_b))][dist_feature]
 
 
 # SRS exclusion cutoff agreed with collaborator (NT <= 67, ASD >= 68)
@@ -108,7 +122,7 @@ def load_all():
                 included=_included(group, r.get("srs_total", "")),
                 occlusion=r["occlusion"],                 # 'yes' / 'no'
                 dist_feature=r["set_a_dist_feature"],     # 'type' / 'non_type'
-                dist_dims=_dist_dims(r["unique_property"], r["set_a_dist_feature"]),
+                dist_dims=_dist_dims(r["set_a"], r["set_b"], r["set_a_dist_feature"]),
                 set_a=_parse_set(r["set_a"]), set_b=_parse_set(r["set_b"]),
                 setA=setA, setB=setB,
                 expression=r["expression"].strip(),
