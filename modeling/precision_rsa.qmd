@@ -29,51 +29,50 @@ $$
 import numpy as np
 import jax
 import jax.numpy as jnp
+from collections import defaultdict
 from scipy.optimize import minimize
 
 import data
 import model
+from model import CELLS, LABELS, trial_arrays, minimize_nll
 
 jax.config.update("jax_enable_x64", True)
 
-CELLS = {("accuracy", "ASD"): 0, ("accuracy", "NT"): 1,
-         ("minimal", "ASD"): 2, ("minimal", "NT"): 3}
-LABELS = ["acc_ASD", "acc_NT", "min_ASD", "min_NT"]
-
-
-def trial_arrays(trials):
-    cell, occ, dv, uidx, expi, grp, srs, pid = ([] for _ in range(8))
-    for t in trials:
-        if not t["included"] or (t["experiment"], t["group"]) not in CELLS:
-            continue
-        try:
-            s = float(t["srs"])
-        except (TypeError, ValueError):
-            continue
-        cell.append(CELLS[(t["experiment"], t["group"])])
-        expi.append(0 if t["experiment"] == "accuracy" else 1)
-        grp.append(t["group"])
-        srs.append(s)
-        pid.append(t["pid"])
-        occ.append(1 if t["occlusion"] == "yes" else 0)
-        dv.append(model.distvec(t["dist_dims"]))
-        uidx.append(model.code_to_uidx(t["setA"], t["setB"]))
-    srs = np.array(srs)
-    z = (srs - srs.mean()) / srs.std()
-    return dict(cell=jnp.array(cell), occ=jnp.array(occ), dv=jnp.array(dv),
-                uidx=jnp.array(uidx), expi=jnp.array(expi), grp=np.array(grp),
-                z=jnp.array(z), pid=np.array(pid),
-                srs_mu=srs.mean(), srs_sd=srs.std())
-
-
-A = trial_arrays(data.load_all())
+TRIALS = data.load_all()
+A = trial_arrays(TRIALS)
 print(f"{model.NU} legal utterances; {A['cell'].shape[0]} trials")
+
+
+def strata(A):
+    """(experiment, group) -> pid -> [row indices], for stratified resampling."""
+    S = defaultdict(lambda: defaultdict(list))
+    for i in range(A["cell"].shape[0]):
+        S[(int(A["expi"][i]), A["grp"][i])][A["pid"][i]].append(i)
+    return S
+
+
+def resample_pids(S, rng):
+    idx = []
+    for pids in S.values():
+        ks = list(pids)
+        for j in rng.choice(len(ks), len(ks), replace=True):
+            idx.extend(pids[ks[j]])
+    return jnp.array(idx)
+
+
+def ci_line(name, point, col):
+    lo, hi = np.percentile(col, [2.5, 97.5])
+    sig = "***" if (lo < 0) == (hi < 0) else "n.s."
+    print(f"{name} = {point:+.3f}  95% CI [{lo:+.3f}, {hi:+.3f}]  {sig}")
+
+
+STRATA = strata(A)        # (experiment, group) -> pid -> rows, for the participant bootstraps
 ```
 
 ## 1. Fit and the autism effect
 
 ```{python}
-fit = model.fit(A["cell"], A["occ"], A["dv"], A["uidx"], 4)
+fit = model.fit(A["cell"], A["occ"], A["dist"], A["uidx"], 4)
 print("salience prior sigma [shape, colour, size, plural, singular] =",
       ", ".join(f"{x:.2f}" for x in fit["sigma"]))
 print(f"lambda = {fit['lam']:.2f}   AIC = {fit['aic']:.1f}   "
@@ -86,24 +85,22 @@ print(f"\nGROUP CONTRAST (beta_ASD - beta_NT):  "
 ```
 
 ```{python}
-from collections import defaultdict
-
 DIMS_ORDER = ("number", "size", "colour", "shape")
-emp = data.empirical_rates(data.load_all(), "accuracy")
+emp = data.empirical_rates(TRIALS, "accuracy")
 
 
 def ppc(experiment):
     """Model P(mention) averaged over the actual trials (per-trial dv/occ/cell)."""
     acc = defaultdict(lambda: [0.0, 0])
-    for t in data.load_all():
+    for t in TRIALS:
         if t["experiment"] != experiment or not t["included"]:
             continue
         if (experiment, t["group"]) not in CELLS:
             continue
-        dv = jnp.array(model.distvec(t["dist_dims"]))
+        dist = model.dist_index(t["dist_dims"])
         p = model.mention_prob(jnp.array(fit["s5"]), fit["lam"],
-                               fit["beta"][CELLS[(experiment, t["group"])]],
-                               dv, float(t["occlusion"] == "yes"))
+                            fit["beta"][CELLS[(experiment, t["group"])]],
+                            dist, float(t["occlusion"] == "yes"))
         for d in DIMS_ORDER:
             key = (t["occlusion"], t["dist_feature"], t["group"], d)
             acc[key][0] += float(p[model.FEAT[("A", d)]]); acc[key][1] += 1
@@ -126,27 +123,21 @@ for occ in ("no", "yes"):
 # per-trial (sigma, lam, w_S, beta) so the group can enter ANY channel
 EXPI = np.asarray(A["expi"]); GRP = (A["grp"] != "ASD").astype(int)   # 0=ASD, 1=NT
 CELL = np.asarray(A["cell"]); OCC = np.asarray(A["occ"], float)
-DVj = A["dv"]; UIDXj = A["uidx"]; PIDa = A["pid"]; Ntr = CELL.shape[0]
-MENTION, NCOST, SAL_MAP = model.MENTION, model.NCOST, model.SAL_MAP
+DISTa = np.asarray(A["dist"]); UIDXj = A["uidx"]; PIDa = A["pid"]; Ntr = CELL.shape[0]
+
+# the model is the memo speaker (model.speaker); vmap it over per-trial params.
+_SPK = jax.vmap(model.speaker, in_axes=(0,) * 9)        # (s0..s4, lam, beta, wS, occ) -> [n, dist, u]
 
 
-def _spk1(s5, lam, wS, beta, o, d):
-    sigma = jnp.clip(jax.nn.sigmoid((s5 - jnp.mean(s5))[SAL_MAP]), 1e-6, 1 - 1e-6)
-    logPS = MENTION @ jnp.log(sigma) + (1.0 - MENTION) @ jnp.log1p(-sigma)
-    comp = (MENTION @ d == 0).astype(jnp.float64)
-    U_ego = -jnp.log(1.0 + comp)
-    U_asym = jnp.mean(-jnp.log(1.0 + comp[:, None] + (1.0 - MENTION)), axis=1)
-    I = (wS * o) * U_asym + (1.0 - wS * o) * U_ego
-    return jax.nn.softmax(logPS + lam * I - beta * NCOST)
-
-
-_SPK = jax.vmap(_spk1, in_axes=(0, 0, 0, 0, 0, 0))   # s5 per-trial (allows per-group sigma)
+def _P(s5, lam, wS, beta, occ):
+    """Per-trial speaker distribution [n, dist, u]; s5 is [n, 5], mean-centred here."""
+    s5c = s5 - jnp.mean(s5, axis=1, keepdims=True)
+    return _SPK(s5c[:, 0], s5c[:, 1], s5c[:, 2], s5c[:, 3], s5c[:, 4], lam, beta, wS, occ)
 
 
 def _sub(mask):
-    pos = jnp.array(np.where(mask)[0])
     return dict(e=jnp.array(EXPI[mask]), g=jnp.array(GRP[mask]), c=jnp.array(CELL[mask]),
-                o=jnp.array(OCC[mask]), d=DVj[pos], u=UIDXj[pos])
+                o=jnp.array(OCC[mask]), dist=jnp.array(DISTa[mask]), u=jnp.array(np.asarray(UIDXj)[mask]))
 
 
 def _pt(kind, th, s):
@@ -170,8 +161,9 @@ def _pt(kind, th, s):
 
 def _nll(kind, th, s):
     s5, lam_t, wS_t, be_t = _pt(kind, th, s)
-    P = _SPK(s5, lam_t, wS_t, be_t, s["o"], s["d"]); n = s["u"].shape[0]
-    return -jnp.sum(jnp.log(P[jnp.arange(n), s["u"]] + 1e-12))
+    P = _P(s5, lam_t, wS_t, be_t, s["o"])
+    n = s["u"].shape[0]
+    return -jnp.sum(jnp.log(P[jnp.arange(n), s["dist"], s["u"]] + 1e-12))
 
 
 INIT = {"M0":   np.r_[np.zeros(5), 2., 0., 0.],
@@ -183,13 +175,7 @@ KP = {"M0": 7, "Mbeta": 9, "MwS": 9, "Mlam": 8, "Msig": 11}  # free params (sali
 
 
 def _fit(kind, s, x0=None):
-    vg = jax.jit(jax.value_and_grad(lambda th: _nll(kind, th, s)))
-
-    def f(x):
-        v, g = vg(jnp.array(x)); return float(v), np.asarray(g, np.float64)
-
-    return minimize(f, INIT[kind] if x0 is None else x0, jac=True,
-                    method="L-BFGS-B", options=dict(maxiter=5000)).x
+    return minimize_nll(lambda th: _nll(kind, th, s), INIT[kind] if x0 is None else x0).x
 
 
 FULL = _sub(np.ones(Ntr, bool)); RES = {}
@@ -234,7 +220,7 @@ print("M_lam lambda: ASD %.2f   NT %.2f" % (jax.nn.softplus(xl[5]), jax.nn.softp
 ```{python}
 # discriminating signature: ASD-NT redundancy gap vs feature salience
 # (accuracy, occlusion-absent, TYPE trials: all non-type features redundant)
-emp = data.empirical_rates(data.load_all(), "accuracy")
+emp = data.empirical_rates(TRIALS, "accuracy")
 sig = dict(zip(("shape", "colour", "size", "plural"), fit["sigma"]))
 print(f"{'feature':9s}{'salience':>10s}{'ASD-NT gap':>12s}")
 for d, key in (("colour", "colour"), ("size", "size"), ("number", "plural")):
@@ -251,11 +237,13 @@ def unpack_srs(th):
     return s5, lam, th[6:8], th[8:10]
 
 
-def nll_srs(th, expi, z, occ, dv, ui):
-    s5, lam, b0, b_srs = unpack_srs(th)
-    beta = b0[expi] + b_srs[expi] * z
-    P = model.spk(s5, lam, beta, occ.astype(jnp.float64), dv)
-    return -jnp.sum(jnp.log(P[jnp.arange(P.shape[0]), ui] + 1e-12))
+def nll_srs(th, expi, z, occ, dist, ui):
+    s5, lam, b0, b_srs = unpack_srs(th)               # s5 already centred
+    beta = b0[expi] + b_srs[expi] * z                 # per-trial brevity weight
+    n = beta.shape[0]
+    P = _SPK(*(jnp.full(n, s5[k]) for k in range(5)),
+             jnp.full(n, lam), beta, jnp.ones(n), occ.astype(jnp.float64))   # [n, dist, u]
+    return -jnp.sum(jnp.log(P[jnp.arange(n), dist, ui] + 1e-12))
 
 
 vgs = jax.jit(jax.value_and_grad(nll_srs))
@@ -264,7 +252,7 @@ vgs = jax.jit(jax.value_and_grad(nll_srs))
 def fit_srs(sub, th0):
     def f(x):
         v, g = vgs(jnp.array(x), sub["expi"], sub["z"], sub["occ"],
-                   sub["dv"], sub["uidx"])
+                   sub["dist"], sub["uidx"])
         return float(v), np.asarray(g)
 
     return minimize(f, th0, jac=True, method="L-BFGS-B").x
@@ -277,63 +265,59 @@ zmean = {g: float(np.mean(np.asarray(A["z"])[A["grp"] == g])) for g in ("ASD", "
 
 # participant bootstrap (stratified by experiment x group)
 rng = np.random.default_rng(0)
-NBOOT = 300
-by_cell = {}
-for i in range(A["cell"].shape[0]):
-    key = (int(A["expi"][i]), A["grp"][i])
-    by_cell.setdefault(key, {}).setdefault(A["pid"][i], []).append(i)
-
 boots = []
-for _ in range(NBOOT):
-    idx = []
-    for cell_pids in by_cell.values():
-        keys = list(cell_pids)
-        for j in rng.choice(len(keys), size=len(keys), replace=True):
-            idx.extend(cell_pids[keys[j]])
-    sub = {k: A[k][jnp.array(idx)] for k in ("expi", "z", "occ", "dv", "uidx")}
+for _ in range(300):
+    ix = resample_pids(STRATA, rng)
+    sub = {k: A[k][ix] for k in ("expi", "z", "occ", "dist", "uidx")}
     boots.append(np.asarray(unpack_srs(jnp.array(fit_srs(sub, full)))[3]))
 boots = np.array(boots)
 
 print(f"SRS: mean {A['srs_mu']:.1f}, sd {A['srs_sd']:.1f}; "
       f"z_ASD = {zmean['ASD']:+.2f}, z_NT = {zmean['NT']:+.2f}\n")
 for j, name in enumerate(("accuracy", "minimal")):
-    lo, hi = np.percentile(boots[:, j], [2.5, 97.5])
-    sig = "***" if (lo < 0) == (hi < 0) else "n.s."
-    print(f"beta_srs[{name:9s}] = {b_srs[j]:+.3f}  "
-          f"95% CI [{lo:+.3f}, {hi:+.3f}]  {sig}")
-lo, hi = np.percentile(boots[:, 0] - boots[:, 1], [2.5, 97.5])
-sig = "***" if (lo < 0) == (hi < 0) else "n.s."
-print(f"\ntrait x instruction interaction (acc - min slope): "
-      f"{b_srs[0] - b_srs[1]:+.3f}  95% CI [{lo:+.3f}, {hi:+.3f}]  {sig}")
+    ci_line(f"beta_srs[{name:9s}]", b_srs[j], boots[:, j])
+ci_line("\ntrait x instruction interaction (acc - min slope)",
+        b_srs[0] - b_srs[1], boots[:, 0] - boots[:, 1])
 ```
 
 ## 4. Robustness and model recovery
 
 ```{python}
+# the autism contrast is invariant to the occlusion term: re-fit with the original
+# heuristic occlusion and compare to the Eq. 2 posterior used throughout.
+_M = jnp.array(model.MENTION); _NC = jnp.array(model.NCOST); _SM = model.SAL_MAP
+def _heur(s5, lam, beta, occ, dist):
+    sigma = jnp.clip(jax.nn.sigmoid((s5 - jnp.mean(s5))[_SM]), 1e-6, 1 - 1e-6)
+    lp = _M @ jnp.log(sigma) + (1.0 - _M) @ jnp.log1p(-sigma)
+    comp = 1.0 - _M[:, dist]                              # competitor consistent iff dist-dim omitted
+    Ue = -jnp.log(1.0 + comp)
+    Ua = jnp.mean(-jnp.log(1.0 + comp[:, None] + (1.0 - _M)), axis=1)
+    return jax.nn.softmax(lp + lam * (occ * Ua + (1 - occ) * Ue) - beta * _NC)
+_hspk = jax.vmap(_heur, in_axes=(None, None, 0, 0, 0))
+def _hnll(th):
+    s5, lam, be = th[:5], jax.nn.softplus(th[5]), th[6:10]
+    P = _hspk(s5, lam, be[A["cell"]], A["occ"].astype(jnp.float64), A["dist"])
+    return -jnp.sum(jnp.log(P[jnp.arange(P.shape[0]), A["uidx"]] + 1e-12))
+_hb = minimize_nll(_hnll, np.concatenate([np.zeros(5), [2.0], np.zeros(4)])).x[6:10]
+_eb = fit["beta"]
+print("autism contrast (beta_ASD - beta_NT) by occlusion term:")
+print(f"  Eq. 2 posterior:  acc {_eb[0]-_eb[1]:+.2f}   min {_eb[2]-_eb[3]:+.2f}")
+print(f"  heuristic:        acc {_hb[0]-_hb[1]:+.2f}   min {_hb[2]-_hb[3]:+.2f}")
+```
+
+```{python}
 rng_c = np.random.default_rng(0)
-bc_idx = {}
-for i in range(Ntr):
-    bc_idx.setdefault((int(EXPI[i]), int(GRP[i])), {}).setdefault(PIDa[i], []).append(i)
-point_b = model.fit(A["cell"], A["occ"], A["dv"], A["uidx"], 4)["beta"]
+point_b = fit["beta"]
 gaps = []
 for _ in range(300):
-    idx = []
-    for cp in bc_idx.values():
-        ks = list(cp)
-        for j in rng_c.choice(len(ks), size=len(ks), replace=True):
-            idx.extend(cp[ks[j]])
-    ix = jnp.array(idx)
-    b = model.fit(A["cell"][ix], A["occ"][ix], A["dv"][ix], A["uidx"][ix], 4)["beta"]
+    ix = resample_pids(STRATA, rng_c)
+    b = model.fit(A["cell"][ix], A["occ"][ix], A["dist"][ix], A["uidx"][ix], 4)["beta"]
     gaps.append([float(b[0] - b[1]), float(b[2] - b[3])])
 gaps = np.array(gaps)
-for j, nm_ in enumerate(("accuracy", "minimal ")):
-    lo, hi = np.percentile(gaps[:, j], [2.5, 97.5]); pt = float(point_b[2*j] - point_b[2*j+1])
-    sig = "***" if (lo < 0) == (hi < 0) else "n.s."
-    print(f"beta_ASD-beta_NT [{nm_}] = {pt:+.3f}  95% CI [{lo:+.3f}, {hi:+.3f}]  {sig}")
-d = gaps[:, 0] - gaps[:, 1]; lo, hi = np.percentile(d, [2.5, 97.5])
-sig = "***" if (lo < 0) == (hi < 0) else "n.s."
-print(f"experiment difference (acc - min gap) = {float(point_b[0]-point_b[1]-point_b[2]+point_b[3]):+.3f}  "
-      f"95% CI [{lo:+.3f}, {hi:+.3f}]  {sig}")
+for j, nm_ in enumerate(("accuracy", "minimal")):
+    ci_line(f"beta_ASD-beta_NT [{nm_:8s}]", point_b[2*j] - point_b[2*j+1], gaps[:, j])
+ci_line("experiment difference (acc - min gap)",
+        float(point_b[0]-point_b[1]-point_b[2]+point_b[3]), gaps[:, 0] - gaps[:, 1])
 ```
 
 ```{python}
@@ -347,7 +331,7 @@ clin = np.array([not (A["grp"][i] == "ASD" and "clinical" not in _status.get(A["
 cix = jnp.array(np.where(clin)[0])
 nA = {e: len({A["pid"][i] for i in range(Ntr) if A["grp"][i] == "ASD" and int(A["expi"][i]) == e and clin[i]})
       for e in (0, 1)}
-fc = model.fit(A["cell"][cix], A["occ"][cix], A["dv"][cix], A["uidx"][cix], 4)["beta"]
+fc = model.fit(A["cell"][cix], A["occ"][cix], A["dist"][cix], A["uidx"][cix], 4)["beta"]
 print(f"clinical-only ASD: accuracy n={nA[0]}, minimal n={nA[1]}")
 print(f"  contrast acc {fc[0]-fc[1]:+.3f}   min {fc[2]-fc[3]:+.3f}   "
       f"(full sample: acc {point_b[0]-point_b[1]:+.3f}, min {point_b[2]-point_b[3]:+.3f})")
@@ -356,9 +340,10 @@ print(f"  contrast acc {fc[0]-fc[1]:+.3f}   min {fc[2]-fc[3]:+.3f}   "
 ```{python}
 def _simulate(true_kind, theta, key):
     s5_t, lam_t, wS_t, be_t = _pt(true_kind, jnp.array(theta), FULL)
-    P = _SPK(s5_t, lam_t, wS_t, be_t, FULL["o"], FULL["d"])
-    keys = jax.random.split(key, P.shape[0])
-    return jax.vmap(lambda kk, p: jax.random.choice(kk, model.NU, p=p))(keys, P)
+    n = FULL["dist"].shape[0]
+    Pu = _P(s5_t, lam_t, wS_t, be_t, FULL["o"])[jnp.arange(n), FULL["dist"]]   # [n, NU]
+    keys = jax.random.split(key, n)
+    return jax.vmap(lambda kk, p: jax.random.choice(kk, model.NU, p=p))(keys, Pu)
 
 
 s5b = RES["M0"]["x"][:5]; lamb = RES["M0"]["x"][5]
@@ -367,14 +352,16 @@ s5_nt = s5b.copy(); s5_nt[1] -= 1.5; s5_nt[2] -= 1.5    # NT lower colour/size s
 TRUE = {"M0":   RES["M0"]["x"],
         "Mbeta": RES["Mbeta"]["x"],                    # the real (modest) group effect
         "MwS":  np.r_[s5b, lamb, 6.0, 0.0, ba, bm],    # w_S logits: ASD~1, NT~.5; then beta[ba,bm]
-        "Mlam": np.r_[s5b, np.log(np.expm1(7.0)), np.log(np.expm1(3.5)), ba, bm],
+        "Mlam": np.r_[s5b, model.inv_softplus(7.0), model.inv_softplus(3.5), ba, bm],
         "Msig": np.r_[s5b, s5_nt, lamb, ba, bm]}
 KINDS = ["M0", "Mbeta", "MwS", "Mlam", "Msig"]
 R = 10
 print("induced acc/occ-absent colour gap (ASD-NT) per generating model:")
 for tk in KINDS:
     s5_t, lam_t, wS_t, be_t = _pt(tk, jnp.array(TRUE[tk]), FULL)
-    m = (_SPK(s5_t, lam_t, wS_t, be_t, FULL["o"], FULL["d"]) @ MENTION)[:, model.FEAT[("A", "colour")]]
+    n = FULL["dist"].shape[0]
+    Pu = _P(s5_t, lam_t, wS_t, be_t, FULL["o"])[jnp.arange(n), FULL["dist"]]
+    m = (Pu @ jnp.array(model.MENTION))[:, model.FEAT[("A", "colour")]]
     msk = (FULL["e"] == 0) & (FULL["o"] == 0)
     print(f"  {tk:6s} {float(jnp.mean(m[msk & (FULL['g']==0)]) - jnp.mean(m[msk & (FULL['g']==1)])):+.2f}")
 print(f"\nconfusion matrix (rows=true, cols=recovered by min AIC), R={R}")
