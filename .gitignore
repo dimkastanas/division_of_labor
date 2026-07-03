@@ -23,3 +23,6 @@ auth.txt
 *.RData
 *.Rhistory
 .Rproj.user
+
+# unpublished manuscript materials (Overleaf is canonical)
+manuscript/
