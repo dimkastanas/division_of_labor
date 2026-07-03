@@ -1,0 +1,425 @@
+---
+title: "A precision-weighted RSA model of referential over-specification in autism"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    code-tools: true
+    embed-resources: true
+jupyter: python3
+---
+
+## Model
+
+$$
+P_{S_1}(u \mid o) \;\propto\;
+\exp\Bigl(\lambda \ln L_0(o \mid u) \;+\; \textstyle\sum_{f \in u} (m + \delta_f)\Bigr)
+$$
+
+| param | role |
+|---|---|
+| $\delta_f$ | contrasts: which properties come to mind (5, mean-centred) |
+| $m$ | prior level: overall mention propensity (= the only length-sensitive param) |
+| $\lambda$ | informativity weight (per experiment) |
+| $w_S$ | perspective uptake under occlusion (Hawkins 2021 Eqs. 2/5) |
+
+$c_f = -(m+\delta_f)$ recovers the canonical cost form; $\lambda = 0$ recovers $S_0$.
+Reported $m = -\beta$ of `model.speaker`.
+
+## Setup
+
+```{python}
+import numpy as np
+import jax
+import jax.numpy as jnp
+from collections import defaultdict
+
+import data
+import model
+from model import CELLS, LABELS, trial_arrays, minimize_nll
+
+jax.config.update("jax_enable_x64", True)
+
+TRIALS = data.load_all()
+A = trial_arrays(TRIALS)
+EXPI = np.asarray(A["expi"]); GRP = (A["grp"] != "ASD").astype(int)   # 0=ASD, 1=NT
+CELL = np.asarray(A["cell"]); OCC = np.asarray(A["occ"], float)
+DIST = np.asarray(A["dist"]); UIDX = np.asarray(A["uidx"]); PID = np.asarray(A["pid"])
+Ntr = CELL.shape[0]
+print(f"{model.NU} legal utterances; {Ntr} trials; {len(set(PID))} speakers")
+
+_SPK = jax.vmap(model.speaker, in_axes=(0,) * 9)   # (s0..s4, lam, beta, wS, occ) -> [n, dist, u]
+
+
+def _sub(mask):
+    return dict(e=jnp.array(EXPI[mask]), g=jnp.array(GRP[mask]), c=jnp.array(CELL[mask]),
+                o=jnp.array(OCC[mask]), dist=jnp.array(DIST[mask]), u=jnp.array(UIDX[mask]))
+
+
+def strata(A):
+    S = defaultdict(lambda: defaultdict(list))
+    for i in range(Ntr):
+        S[(int(A["expi"][i]), A["grp"][i])][A["pid"][i]].append(i)
+    return S
+
+
+def resample_pids(S, rng):
+    idx = []
+    for pids in S.values():
+        ks = list(pids)
+        for j in rng.choice(len(ks), len(ks), replace=True):
+            idx.extend(pids[ks[j]])
+    return np.array(idx)
+
+
+def ci_line(name, point, col):
+    lo, hi = np.percentile(col, [2.5, 97.5])
+    print(f"{name} = {point:+.3f}  95% percentile CI [{lo:+.3f}, {hi:+.3f}]")
+
+
+STRATA = strata(A)
+FULL = _sub(np.ones(Ntr, bool))
+```
+
+```{python}
+def _pt(kind, th, s):
+    n = s["e"].shape[0]; one = jnp.ones(n)
+    bc = lambda v: jnp.broadcast_to(v, (n, 5))
+    if kind == "M0":        # no group difference                       k=4+2+2=8
+        return bc(th[:5]), jax.nn.softplus(th[5:7])[s["e"]], one, th[7:9][s["e"]]
+    if kind == "MS0":       # group in the prior LEVEL (beta per cell)  k=4+2+4=10
+        return bc(th[:5]), jax.nn.softplus(th[5:7])[s["e"]], one, th[7:11][s["c"]]
+    if kind == "Mprof":     # group in the prior PROFILE + level        k=16+2+4=22
+        return th[:20].reshape(4, 5)[s["c"]], jax.nn.softplus(th[20:22])[s["e"]], one, th[22:26][s["c"]]
+    if kind == "Mlam":      # group in informativity (lam per cell)     k=4+4+2=10
+        return bc(th[:5]), jax.nn.softplus(th[5:9])[s["c"]], one, th[9:11][s["e"]]
+    if kind == "MToM":      # group in perspective (wS per cell)        k=4+2+2+4=12
+        return bc(th[:5]), jax.nn.softplus(th[5:7])[s["e"]], jax.nn.sigmoid(th[9:13])[s["c"]], th[7:9][s["e"]]
+    if kind == "Mboth":     # group in both weights (lam+beta per cell) k=4+4+4=12
+        return bc(th[:5]), jax.nn.softplus(th[5:9])[s["c"]], one, th[9:13][s["c"]]
+    if kind == "S0":        # lambda = 0: pure production prior         k=4+4=8
+        return bc(th[:5]), jnp.zeros(n), one, th[5:9][s["c"]]
+
+
+def _nll(kind, th, s):
+    s5, lam_t, wS_t, be_t = _pt(kind, th, s)
+    s5c = s5 - jnp.mean(s5, axis=1, keepdims=True)
+    n = s["e"].shape[0]
+    P = _SPK(s5c[:, 0], s5c[:, 1], s5c[:, 2], s5c[:, 3], s5c[:, 4], lam_t, be_t, wS_t, s["o"])
+    return -jnp.sum(jnp.log(P[jnp.arange(n), s["dist"], s["u"]] + 1e-12))
+
+
+def _nll_pertrial(kind, th, s):
+    s5, lam_t, wS_t, be_t = _pt(kind, th, s)
+    s5c = s5 - jnp.mean(s5, axis=1, keepdims=True)
+    n = s["e"].shape[0]
+    P = _SPK(s5c[:, 0], s5c[:, 1], s5c[:, 2], s5c[:, 3], s5c[:, 4], lam_t, be_t, wS_t, s["o"])
+    return -jnp.log(P[jnp.arange(n), s["dist"], s["u"]] + 1e-12)
+
+
+INIT = {"M0":   np.r_[np.zeros(5), 2., 2., 0., 0.],
+        "MS0":  np.r_[np.zeros(5), 2., 2., np.zeros(4)],
+        "Mprof": np.r_[np.zeros(20), 2., 2., np.zeros(4)],
+        "Mlam": np.r_[np.zeros(5), 2. * np.ones(4), 0., 0.],
+        "MToM": np.r_[np.zeros(5), 2., 2., 0., 0., 3. * np.ones(4)],
+        "Mboth": np.r_[np.zeros(5), 2. * np.ones(4), np.zeros(4)],
+        "S0":   np.r_[np.zeros(5), np.zeros(4)]}
+KP = {"M0": 8, "MS0": 10, "Mprof": 22, "Mlam": 10, "MToM": 12, "Mboth": 12, "S0": 8}
+KINDS = ["Mprof", "Mboth", "MS0", "Mlam", "M0", "MToM"]
+NM = {"Mprof": "S0 prior: profile + level", "Mboth": "both weights (lam, m)",
+      "MS0": "S0 prior: level m only", "Mlam": "informativity lam",
+      "M0": "none", "MToM": "perspective wS", "S0": "pure S0 (lam=0)"}
+
+
+def _fit(kind, s, x0=None):
+    return minimize_nll(lambda th: _nll(kind, th, s), INIT[kind] if x0 is None else x0).x
+```
+
+## Model selection
+
+```{python}
+RES = {}
+for k in KINDS + ["S0"]:
+    x = _fit(k, FULL)
+    RES[k] = dict(x=x, nll=float(_nll(k, jnp.array(x), FULL)))
+# warm-start Mprof from MS0 (tile shared contrasts, copy levels); keep the better
+xb = RES["MS0"]["x"]
+xw = _fit("Mprof", FULL, np.r_[np.tile(xb[:5], 4), xb[5:7], xb[7:11]])
+if float(_nll("Mprof", jnp.array(xw), FULL)) < RES["Mprof"]["nll"]:
+    RES["Mprof"] = dict(x=xw, nll=float(_nll("Mprof", jnp.array(xw), FULL)))
+
+# 5-fold CV holding out whole participants (stratified by cell)
+rng = np.random.default_rng(0); KF = 5; fold_of = {}
+for ci in range(4):
+    ps = list(rng.permutation(sorted(set(PID[CELL == ci]))))
+    for j, p in enumerate(ps):
+        fold_of[p] = j % KF
+tf = np.array([fold_of[p] for p in PID])
+
+cv = {}
+for k in KINDS:
+    cv[k] = 0.0
+    for fo in range(KF):
+        xf = _fit(k, _sub(tf != fo), RES[k]["x"])
+        cv[k] += float(_nll(k, jnp.array(xf), _sub(tf == fo)))
+
+aic = {k: 2 * KP[k] + 2 * RES[k]["nll"] for k in KINDS}
+ba, bc_ = min(aic.values()), min(cv.values())
+print(f"{'group difference in':28s}{'k':>4}{'AIC':>10}{'dAIC':>9}{'CV':>10}{'dCV':>9}")
+for k in KINDS:
+    print(f"{NM[k]:28s}{KP[k]:>4}{aic[k]:>10.1f}{aic[k]-ba:>+9.1f}{cv[k]:>10.1f}{cv[k]-bc_:>+9.1f}")
+```
+
+```{python}
+x = RES["MS0"]["x"]
+m = -x[7:11]                                            # m = -beta
+lam_e = np.asarray(jax.nn.softplus(jnp.array(x[5:7])))
+print(f"MS0 (level-only): lam per experiment = {lam_e[0]:.2f} / {lam_e[1]:.2f}")
+print(f"  level m per cell [acc_ASD, acc_NT, min_ASD, min_NT] = {np.round(m, 2)}")
+print(f"  GROUP CONTRAST (m_ASD - m_NT): accuracy {m[0]-m[1]:+.2f}   minimal {m[2]-m[3]:+.2f}")
+
+xp = RES["Mprof"]["x"]
+mp = -xp[22:26]
+print(f"\nMprof (profile+level): contrast acc {mp[0]-mp[1]:+.2f}   min {mp[2]-mp[3]:+.2f}")
+xw_ = RES["MToM"]["x"]
+print(f"MToM: wS per cell = {np.round(np.asarray(jax.nn.sigmoid(jnp.array(xw_[9:13]))), 3)}")
+xl = RES["Mlam"]["x"]
+print(f"Mlam: lam per cell = {np.round(np.asarray(jax.nn.softplus(jnp.array(xl[5:9]))), 2)}")
+sig = np.asarray(jax.nn.sigmoid(jnp.array(x[:5] - np.mean(x[:5]))))
+print(f"MS0 sigma (centred) [shape, colour, size, plural, singular] = {np.round(sig, 2)}")
+```
+
+```{python}
+# emit the manuscript's Table (booktabs) so the paper stays pipeline-generated
+ROWS = {"Mprof": r"contrasts $\delta_f$ + mention propensity $m$",
+        "Mboth": r"mention propensity $m$ + informativity $\lambda$",
+        "MS0":  r"mention propensity $m$ only",
+        "Mlam": r"informativity $\lambda$ only",
+        "M0":   "none",
+        "MToM": r"perspective $w_S$ only"}
+_d = lambda v, b: "0" if v == b else f"$+{v-b:.0f}$"
+body = "\n".join(f"{ROWS[k]} & {KP[k]} & {_d(aic[k], ba)} & {_d(cv[k], bc_)} \\\\"
+                 for k in sorted(KINDS, key=lambda k: aic[k]))
+import os
+os.makedirs("../manuscript", exist_ok=True)
+ntx = f"{Ntr:,}".replace(",", "{,}")
+tex = ("\\begin{table}[t]\n\\centering\n\\begin{tabular}{lrrr}\n\\toprule\n"
+       "Group difference in & $k$ & $\\Delta$AIC & $\\Delta$CV \\\\\n\\midrule\n"
+       + body + "\n\\bottomrule\n\\end{tabular}\n"
+       "\\caption{Model selection over all " + ntx + " expressions. Every variant shares\n"
+       "the contrasts $\\delta_f$ across groups and lets $\\lambda$ and the mention\n"
+       "propensity $m$ vary by instruction condition; rows differ only in which\n"
+       "component additionally varies by group. $k$ = free parameters;\n"
+       "$\\Delta$AIC relative to the best model; $\\Delta$CV = summed held-out\n"
+       "negative log-likelihood from five-fold cross-validation over\n"
+       "participants (lower is better).}\n"
+       "\\label{tab:model-comparison}\n\\end{table}\n")
+open("../manuscript/table_model_selection.tex", "w").write(tex)
+print(tex)
+```
+
+## Level bootstrap
+
+```{python}
+rng_b = np.random.default_rng(1)
+full_x = RES["MS0"]["x"]
+boots = []
+for _ in range(2000):
+    ix = resample_pids(STRATA, rng_b)
+    s = dict(e=jnp.array(EXPI[ix]), g=jnp.array(GRP[ix]), c=jnp.array(CELL[ix]),
+             o=jnp.array(OCC[ix]), dist=jnp.array(DIST[ix]), u=jnp.array(UIDX[ix]))
+    xb_ = _fit("MS0", s, full_x)
+    mb = -xb_[7:11]
+    boots.append([mb[0] - mb[1], mb[2] - mb[3]])
+boots = np.array(boots)
+
+ci_line("m contrast [accuracy]", m[0] - m[1], boots[:, 0])
+ci_line("m contrast [minimal ]", m[2] - m[3], boots[:, 1])
+ci_line("experiment difference ", (m[0] - m[1]) - (m[2] - m[3]), boots[:, 0] - boots[:, 1])
+```
+
+## $S_0$ ablation
+
+```{python}
+t0 = np.asarray(_nll_pertrial("S0", jnp.array(RES["S0"]["x"]), FULL))
+tm = np.asarray(_nll_pertrial("MS0", jnp.array(RES["MS0"]["x"]), FULL))
+print(f"pure S0: AIC {2*KP['S0']+2*RES['S0']['nll']:.1f}  vs  MS0 AIC {aic['MS0']:.1f}")
+print("\nper-trial penalty (S0 - MS0), log-likelihood units, by cell:")
+for c, lab in enumerate(LABELS):
+    msk = CELL == c
+    print(f"  {lab:8s} {np.mean(t0[msk] - tm[msk]):+.3f}")
+print(f"\nby occlusion: absent {np.mean((t0-tm)[OCC==0]):+.3f}   present {np.mean((t0-tm)[OCC==1]):+.3f}")
+```
+
+## SRS
+
+```{python}
+def unpack_srs(th):
+    s5 = th[:5] - jnp.mean(th[:5])
+    lam_e = jax.nn.softplus(th[5:7])
+    return s5, lam_e, th[7:9], th[9:11]        # b0[exp], b_srs[exp]  (beta = -m)
+
+
+def nll_srs(th, expi, z, occ, dist, ui):
+    s5, lam_e, b0, b_srs = unpack_srs(th)
+    beta = b0[expi] + b_srs[expi] * z
+    lam = lam_e[expi]
+    n = beta.shape[0]
+    P = _SPK(*(jnp.full(n, s5[k]) for k in range(5)),
+             lam, beta, jnp.ones(n), occ.astype(jnp.float64))
+    return -jnp.sum(jnp.log(P[jnp.arange(n), dist, ui] + 1e-12))
+
+
+def fit_srs(sub, th0):
+    return minimize_nll(lambda th: nll_srs(th, sub["expi"], sub["z"], sub["occ"],
+                                           sub["dist"], sub["uidx"]), th0).x
+
+
+th0 = np.r_[np.zeros(5), 2.0, 2.0, 0., 0., 0., 0.]
+full_srs = fit_srs(A, th0)
+m_srs = -np.asarray(unpack_srs(jnp.array(full_srs))[3])          # m slope = -beta slope
+
+rng_s = np.random.default_rng(2)
+boots_s = []
+for _ in range(2000):
+    ix = resample_pids(STRATA, rng_s)
+    sub = {k: A[k][ix] for k in ("expi", "z", "occ", "dist", "uidx")}
+    boots_s.append(-np.asarray(unpack_srs(jnp.array(fit_srs(sub, full_srs)))[3]))
+boots_s = np.array(boots_s)
+
+print(f"SRS: mean {A['srs_mu']:.1f}, sd {A['srs_sd']:.1f}")
+ci_line("m slope per SD [accuracy]", m_srs[0], boots_s[:, 0])
+ci_line("m slope per SD [minimal ]", m_srs[1], boots_s[:, 1])
+ci_line("trait x instruction (acc - min)", m_srs[0] - m_srs[1], boots_s[:, 0] - boots_s[:, 1])
+```
+
+## Robustness
+
+```{python}
+# (a) clinically diagnosed ASD only
+import csv as _csv, os as _os
+_status = {}
+for _f in ("accuracy_ASD.csv", "minimal_ASD.csv"):
+    for _r in _csv.DictReader(open(_os.path.join(data.DATA_DIR, _f))):
+        _status[_r["prolific_pid"]] = _r["autistic"]
+clin = np.array([not (A["grp"][i] == "ASD" and "clinical" not in _status.get(A["pid"][i], "").lower())
+                 for i in range(Ntr)])
+xc = _fit("MS0", _sub(clin), RES["MS0"]["x"])
+mc = -xc[7:11]
+nA = {e: len({PID[i] for i in range(Ntr) if GRP[i] == 0 and EXPI[i] == e and clin[i]}) for e in (0, 1)}
+print(f"clinical-only ASD (n={nA[0]}/{nA[1]}): contrast acc {mc[0]-mc[1]:+.2f}  min {mc[2]-mc[3]:+.2f}"
+      f"   (full: {m[0]-m[1]:+.2f} / {m[2]-m[3]:+.2f})")
+```
+
+```{python}
+# (b) heuristic occlusion term in place of the exact Eq. 2 posterior
+_M = jnp.array(model.MENTION); _NC = jnp.array(model.NCOST); _SM = model.SAL_MAP
+def _heur_nll(th):
+    s5 = th[:5] - jnp.mean(th[:5]); lam_e = jax.nn.softplus(th[5:7]); be = th[7:11]
+    sig_ = jnp.clip(jax.nn.sigmoid(s5[_SM]), 1e-6, 1 - 1e-6)
+    lp = _M @ jnp.log(sig_) + (1.0 - _M) @ jnp.log1p(-sig_)
+    def one(lam, beta, occ, dist, ui):
+        comp = 1.0 - _M[:, dist]
+        Ue = -jnp.log(1.0 + comp)
+        Ua = jnp.mean(-jnp.log(1.0 + comp[:, None] + (1.0 - _M)), axis=1)
+        p = jax.nn.softmax(lp + lam * (occ * Ua + (1 - occ) * Ue) - beta * _NC)
+        return -jnp.log(p[ui] + 1e-12)
+    return jnp.sum(jax.vmap(one)(lam_e[jnp.array(EXPI)], be[jnp.array(CELL)],
+                                 jnp.array(OCC), jnp.array(DIST), jnp.array(UIDX)))
+xh = minimize_nll(_heur_nll, INIT["MS0"]).x
+mh = -xh[7:11]
+print(f"heuristic occlusion: contrast acc {mh[0]-mh[1]:+.2f}  min {mh[2]-mh[3]:+.2f}"
+      f"   (Eq. 2: {m[0]-m[1]:+.2f} / {m[2]-m[3]:+.2f})")
+```
+
+```{python}
+# (c) canonical form: cost inside the softmax (beta_eff = lam_g * c_e), group on lam
+def _nll_can(th, s):
+    n = s["e"].shape[0]
+    s5 = jnp.broadcast_to(th[:5] - jnp.mean(th[:5]), (n, 5))
+    lam_t = jax.nn.softplus(th[5:7])[s["g"]]
+    be_t = lam_t * th[7:9][s["e"]]
+    P = _SPK(s5[:, 0], s5[:, 1], s5[:, 2], s5[:, 3], s5[:, 4],
+             lam_t, be_t, jnp.ones(n), s["o"])
+    return -jnp.sum(jnp.log(P[jnp.arange(n), s["dist"], s["u"]] + 1e-12))
+res_c = minimize_nll(lambda th: _nll_can(th, FULL), np.r_[np.zeros(5), 2., 2., 0., 0.])
+lam_g = np.asarray(jax.nn.softplus(jnp.array(res_c.x[5:7])))
+print(f"canonical (cost in softmax, group on lam): AIC {2*9+2*res_c.fun:.1f} "
+      f"(vs MS0 {aic['MS0']:.1f});  lam ASD {lam_g[0]:.2f}  NT {lam_g[1]:.2f}")
+```
+
+## PPC
+
+```{python}
+import matplotlib.pyplot as plt
+
+DIMS_ORDER = ("number", "size", "colour", "shape")
+x = RES["MS0"]["x"]; s5f = x[:5]; lamf = np.asarray(jax.nn.softplus(jnp.array(x[5:7])))
+betaf = x[7:11]
+
+
+def ppc(experiment):
+    acc = defaultdict(lambda: [0.0, 0])
+    for t in TRIALS:
+        if t["experiment"] != experiment or not t["included"]:
+            continue
+        if (experiment, t["group"]) not in CELLS:
+            continue
+        dist = model.dist_index(t["dist_dims"])
+        c = CELLS[(experiment, t["group"])]
+        p = model.mention_prob(jnp.array(s5f), float(lamf[0 if experiment == "accuracy" else 1]),
+                               float(betaf[c]), dist, float(t["occlusion"] == "yes"))
+        for d in DIMS_ORDER:
+            key = (t["occlusion"], t["dist_feature"], t["group"], d)
+            acc[key][0] += float(p[model.FEAT[("A", d)]]); acc[key][1] += 1
+    return {k: s / n for k, (s, n) in acc.items()}
+
+
+fig, axes = plt.subplots(2, 4, figsize=(13, 5.5), sharey=True)
+for row, expmt in enumerate(("accuracy", "minimal")):
+    emp = data.empirical_rates(TRIALS, expmt)
+    pred = ppc(expmt)
+    for col, (occ, dist) in enumerate([("no", "type"), ("no", "non_type"),
+                                       ("yes", "type"), ("yes", "non_type")]):
+        ax = axes[row, col]
+        xs = np.arange(len(DIMS_ORDER))
+        for g, colr in (("ASD", "tab:red"), ("NT", "tab:blue")):
+            ax.plot(xs, [emp[(occ, dist, g, d)] for d in DIMS_ORDER], "o", color=colr, label=f"{g} data")
+            ax.plot(xs, [pred[(occ, dist, g, d)] for d in DIMS_ORDER], "-", color=colr, alpha=.6, label=f"{g} model")
+        ax.set_xticks(xs); ax.set_xticklabels(DIMS_ORDER, rotation=45)
+        ax.set_ylim(0, 1.05)
+        if row == 0:
+            ax.set_title(f"occ={occ}, {dist}")
+        if col == 0:
+            ax.set_ylabel(f"{expmt}\nP(mention)")
+axes[0, 0].legend(fontsize=7)
+plt.tight_layout()
+plt.savefig("ppc_mention_rates.png", dpi=200)
+plt.show()
+```
+
+## Recovery
+
+```{python}
+def _simulate(kind, th, key):
+    s5, lam_t, wS_t, be_t = _pt(kind, jnp.array(th), FULL)
+    s5c = s5 - jnp.mean(s5, axis=1, keepdims=True)
+    Pu = _SPK(s5c[:, 0], s5c[:, 1], s5c[:, 2], s5c[:, 3], s5c[:, 4],
+              lam_t, be_t, wS_t, FULL["o"])[jnp.arange(Ntr), FULL["dist"]]
+    keys = jax.random.split(key, Ntr)
+    return jax.vmap(lambda kk, p: jax.random.choice(kk, model.NU, p=p))(keys, Pu)
+
+
+R = 10
+print("confusion matrix (rows=true, cols=selected by min AIC), R=%d" % R)
+print("true\\sel " + "".join(f"{k:>7}" for k in KINDS))
+for tk in KINDS:
+    cnt = {k: 0 for k in KINDS}
+    for r in range(R):
+        u = _simulate(tk, RES[tk]["x"], jax.random.PRNGKey(1000 * KINDS.index(tk) + r))
+        sub = {**FULL, "u": u}
+        aics = {k: 2 * KP[k] + 2 * float(_nll(k, jnp.array(_fit(k, sub, RES[k]["x"])), sub))
+                for k in KINDS}
+        cnt[min(aics, key=aics.get)] += 1
+    print(f"{tk:>8} " + "".join(f"{cnt[k]:>7}" for k in KINDS))
+```
